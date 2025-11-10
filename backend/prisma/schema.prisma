@@ -1,0 +1,430 @@
+// Schema Prisma per tiformiamonoi.it - VERSIONE 2.0
+// Stack: PostgreSQL + Prisma
+// Data: 6 Novembre 2025
+// Modifiche: Pacchetti standard, Pagamenti separati, Slot orari, Stati multipli
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE MODELS - Gestione Base
+// ============================================
+
+// Utenti del sistema (Admin, Tutor, Genitori)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // Hash bcrypt
+  firstName String
+  lastName  String
+  role      UserRole @default(TUTOR)
+  phone     String?
+  active    Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  tutorProfile   TutorProfile?
+  lessonsAsTutor Lesson[]      @relation("TutorLessons")
+  
+  @@index([email])
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  TUTOR
+  GENITORE
+}
+
+// Profilo Tutor (estensione di User)
+model TutorProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Informazioni di contatto opzionali
+  indirizzo      String? // Via, numero civico
+  citta          String?
+  cap            String?
+  codiceFiscale  String?
+  partitaIva     String?
+
+  // Materie insegnate e note
+  materie       String[] // Materie insegnate
+  noteInterne   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tutor_profiles")
+}
+
+// ============================================
+// STUDENTI
+// ============================================
+
+// Studente
+model Student {
+  id        String  @id @default(cuid())
+  firstName String
+  lastName  String
+  
+  // Informazioni scolastiche
+  classe String? // Es: "3° Media", "1° Superiore"
+  scuola String?
+  
+  // Informazioni genitore (per fatturazione)
+  parentName     String? // Nome genitore/tutore legale
+  parentEmail    String?
+  parentPhone    String?
+  parentIndirizzo String? // Via, numero civico
+  parentCitta     String?
+  parentCap       String?
+  parentCF        String? // Codice Fiscale
+  parentPIva      String? // Partita IVA (se azienda)
+  
+  active Boolean @default(true)
+  note   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  pacchetti Package[]
+  lessonStudents LessonStudent[]
+
+  @@index([lastName, firstName])
+  @@map("students")
+}
+
+// ============================================
+// PACCHETTI STANDARD (Template configurabili)
+// ============================================
+
+// Pacchetti Standard - Template da impostazioni
+model StandardPackage {
+  id          String      @id @default(cuid())
+  nome        String      // Es: "Medie - Mensile", "Superiori - 10 Ore"
+  descrizione String?
+  
+  // Tipo pacchetto
+  tipo        PackageType @default(ORE)
+  
+  // Categoria
+  categoria   String      // Es: "Medie", "Superiori", "Elementari", "Preparazione Esami"
+  
+  // Quantità standard
+  oreIncluse         Decimal  @db.Decimal(10, 2) // Ore totali
+  giorniInclusi      Int?     // Solo per MENSILE
+  orarioGiornaliero  Decimal? @db.Decimal(10, 2) // Ore al giorno per MENSILE
+  
+  // Prezzo standard
+  prezzoStandard Decimal @db.Decimal(10, 2)
+  
+  // Validità standard (in giorni)
+  durataGiorni Int? // Es: 30, 60, 90
+  
+  active Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  pacchetti Package[] // Pacchetti creati da questo template
+
+  @@index([categoria, tipo])
+  @@map("standard_packages")
+}
+
+// ============================================
+// PACCHETTI STUDENTI
+// ============================================
+
+// Pacchetto Ore/Giorni acquistato da studente
+model Package {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Template di partenza (opzionale)
+  standardPackageId String?
+  standardPackage   StandardPackage? @relation(fields: [standardPackageId], references: [id], onDelete: SetNull)
+
+  // Nome personalizzabile
+  nome String
+
+  // Tipo pacchetto
+  tipo PackageType @default(ORE)
+
+  // Quantità (può essere modificata rispetto al template)
+  oreAcquistate    Decimal  @db.Decimal(10, 2) // Ore totali acquistate
+  oreResiduo       Decimal  @db.Decimal(10, 2) // Ore rimanenti (può andare in negativo)
+  
+  giorniAcquistati Int?     // Solo per pacchetti mensili
+  giorniResiduo    Int?     // Giorni rimanenti
+  orarioGiornaliero Decimal? @db.Decimal(10, 2) // Es: 3.00 ore al giorno
+
+  // Dettagli economici (personalizzabili)
+  prezzoTotale     Decimal @db.Decimal(10, 2) // Prezzo concordato per questo pacchetto
+  importoPagato    Decimal @default(0) @db.Decimal(10, 2) // Totale già pagato
+  importoResiduo   Decimal @db.Decimal(10, 2) // Residuo da pagare
+
+  // Validità
+  dataInizio   DateTime
+  dataScadenza DateTime?
+  
+  // Stati del pacchetto (gestiti dinamicamente)
+  stati PackageStatus[] @default([ATTIVO]) // Array di stati
+  
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  pagamenti          Payment[]
+  lessonStudents     LessonStudent[]
+  movimentiContabili AccountingEntry[]
+
+  @@index([studentId, stati])
+  @@map("packages")
+}
+
+enum PackageType {
+  ORE      // Pacchetto a ore (es: 10 ore)
+  MENSILE  // Pacchetto mensile (es: 20 giorni × 3 ore/giorno)
+}
+
+enum PackageStatus {
+  ATTIVO          // In regola, ore positive
+  SCADUTO         // Data scaduta
+  ESAURITO        // Ore a zero
+  ORE_NEGATIVE    // Ore negative (oltre limite)
+  IN_SCADENZA     // < 20% ore rimanenti
+  DA_RINNOVARE    // Scade entro 7 giorni
+  PAGATO          // Completamente saldato
+  DA_PAGARE       // Non completamente saldato
+  PAG_SOSPESO     // Sospeso manualmente
+}
+
+// ============================================
+// PAGAMENTI
+// ============================================
+
+// Pagamenti per pacchetti (acconti, saldi, rate)
+model Payment {
+  id        String   @id @default(cuid())
+  packageId String
+  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  // Dettagli pagamento
+  importo           Decimal       @db.Decimal(10, 2)
+  tipoPagamento     PaymentType   @default(ACCONTO)
+  metodoPagamento   PaymentMethod @default(CONTANTI)
+  
+  richiedeFattura   Boolean       @default(false)
+
+  // Data e riferimenti
+  dataPagamento DateTime @default(now())
+  riferimento   String?  // Numero ricevuta, bonifico, ecc.
+  
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  movimentoContabile AccountingEntry?
+
+  @@index([packageId, dataPagamento])
+  @@map("payments")
+}
+
+enum PaymentType {
+  ACCONTO  // Pagamento parziale iniziale
+  SALDO    // Pagamento finale
+  RATA     // Pagamento rateale
+  INTEGRAZIONE // Integrazione per pacchetto modificato
+}
+
+enum PaymentMethod {
+  CONTANTI
+  BONIFICO
+  POS
+  ASSEGNO
+  ALTRO
+}
+
+// ============================================
+// SLOT ORARI STANDARD
+// ============================================
+
+// Slot orari predefiniti configurabili
+model TimeSlot {
+  id          String  @id @default(cuid())
+  oraInizio   String  // Es: "15:30"
+  oraFine     String  // Es: "16:30"
+  descrizione String? // Es: "Pomeriggio - Primo turno"
+  
+  active Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  lezioni Lesson[]
+
+  @@unique([oraInizio, oraFine])
+  @@map("time_slots")
+}
+
+// ============================================
+// LEZIONI SEMPLIFICATE
+// ============================================
+
+// ============================================
+// LEZIONI - SUPPORTO GRUPPO
+// ============================================
+
+// Lezione (una lezione può avere più studenti)
+model Lesson {
+  id         String     @id @default(cuid())
+  
+  // Tutor
+  tutorId String
+  tutor   User   @relation("TutorLessons", fields: [tutorId], references: [id])
+
+  // Dettagli lezione
+  data DateTime
+  
+  // Slot orario standard
+  timeSlotId String
+  timeSlot   TimeSlot @relation(fields: [timeSlotId], references: [id])
+
+  // Tipo lezione calcolato automaticamente
+  tipo          LessonType @default(SINGOLA)
+  forzaGruppo   Boolean    @default(false)
+  
+  // Compenso tutor per questa lezione
+  compensoTutor Decimal? @db.Decimal(10, 2)
+
+  // Note opzionali
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relazioni
+  lessonStudents     LessonStudent[]
+  movimentiContabili AccountingEntry[]
+
+  @@index([data, tutorId])
+  @@map("lessons")
+}
+
+// Tabella ponte: Studenti in una lezione
+model LessonStudent {
+  id        String  @id @default(cuid())
+  lessonId  String
+  studentId String
+  packageId String
+  
+  // Dettagli specifici studente
+  mezzaLezione Boolean @default(false)
+  oreScalate   Decimal @default(1.0) @db.Decimal(10, 2)
+  
+  createdAt DateTime @default(now())
+  
+  // Relazioni
+  lesson  Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  
+  @@unique([lessonId, studentId])
+  @@index([studentId])
+  @@index([packageId])
+  @@map("lesson_students")
+}
+
+enum LessonType {
+  SINGOLA     // 1 studente
+  GRUPPO      // 2-3 studenti
+  MAXI        // 4+ studenti
+}
+
+
+// ============================================
+// CONTABILITÀ
+// ============================================
+
+// Movimento Contabile
+model AccountingEntry {
+  id String @id @default(cuid())
+
+  // Tipo movimento
+  tipo AccountingType
+  
+  // Importo (sempre positivo, tipo definisce entrata/uscita)
+  importo Decimal @db.Decimal(10, 2)
+
+  // Descrizione
+  descrizione String
+  categoria   String? // "Pacchetto", "Compenso Tutor", "Rimborso", etc.
+
+  // Data movimento
+  data DateTime @default(now())
+
+  // Relazioni opzionali
+  packageId String?
+  package   Package? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+
+  lessonId String?
+  lesson   Lesson? @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+
+  paymentId String?  @unique
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  // Metadati
+  note String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([data, tipo])
+  @@map("accounting_entries")
+}
+
+enum AccountingType {
+  ENTRATA  // Pagamento pacchetto
+  USCITA   // Compenso tutor, spese
+  NOTA     // Movimento di nota (non influisce sul saldo)
+}
+
+// ============================================
+// IMPOSTAZIONI SISTEMA
+// ============================================
+
+// Configurazioni globali
+model SystemConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+  
+  description String?
+  category    String? // Es: "tariffe", "generale", "notifiche"
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@map("system_configs")
+}
