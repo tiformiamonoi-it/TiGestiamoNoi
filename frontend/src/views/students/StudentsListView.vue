@@ -64,6 +64,16 @@
         @close="closeManagePackagesModal"
         @refresh="loadStudents(true)"
       />
+
+
+      <!-- Modal Crea/Modifica Studente -->
+      <CreateStudentModal
+        v-if="showCreateModal"
+        :student="studentToEdit"
+        @close="closeCreateModal"
+        @saved="handleStudentSaved"
+      />
+
     </div>
 </template>
 
@@ -75,6 +85,8 @@ import StudentStatsCards from '@/components/students/StudentStatsCards.vue';
 import StudentFilters from '@/components/students/StudentFilters.vue';
 import StudentsTable from '@/components/students/StudentsTable.vue';
 import ManagePackagesModal from '@/components/students/ManagePackagesModal.vue';
+import CreateStudentModal from '@/components/students/CreateStudentModal.vue';
+
 
 const router = useRouter();
 
@@ -86,7 +98,8 @@ const students = ref([]);
 const loading = ref(false);
 const page = ref(1);
 const hasMore = ref(true);
-
+const showCreateModal = ref(false);
+const studentToEdit = ref(null);
 // Stats
 const stats = ref({
   totale: 0,
@@ -228,13 +241,34 @@ const closeManagePackagesModal = () => {
   selectedStudent.value = null;
 };
 
-const openCreateModal = () => {
-  router.push('/students/new');
-};
+
 
 onMounted(() => {
   loadStudents();
 });
+
+
+const openCreateModal = () => {
+  studentToEdit.value = null;
+  showCreateModal.value = true;
+};
+
+const openEditModal = (student) => {
+  studentToEdit.value = student;
+  showCreateModal.value = true;
+};
+
+const closeCreateModal = () => {
+  showCreateModal.value = false;
+  studentToEdit.value = null;
+};
+
+const handleStudentSaved = () => {
+  loadStudents(true);
+  closeCreateModal();
+};
+
+
 </script>
 
 <style scoped>

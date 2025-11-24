@@ -48,7 +48,7 @@
           :checked="mezzaLezione"
           @change="$emit('update:mezzaLezione', $event.target.checked)"
         />
-        <span>☑️ Mezza lezione</span>
+        <span>Mezza lezione</span>
       </label>
 
       <label class="checkbox-label">
@@ -57,7 +57,7 @@
           :checked="forzaGruppo"
           @change="$emit('update:forzaGruppo', $event.target.checked)"
         />
-        <span>☐ Forza gruppo</span>
+        <span>Forza gruppo</span>
       </label>
     </div>
 

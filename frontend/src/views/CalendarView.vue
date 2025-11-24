@@ -112,6 +112,104 @@
 
         <!-- Corpo Giorno Espanso -->
         <div v-if="isDayExpanded(giorno.data)" class="day-body">
+          <!-- Griglia Tutor × Slot -->
+          <div class="day-grid-section">
+            <div class="grid-header">
+              <h4 class="grid-title">📅 Lezioni per Slot</h4>
+            </div>
+
+            <!-- Tabella Griglia -->
+            <div class="slot-grid-wrapper">
+              <table class="slot-grid">
+                <thead>
+                  <tr>
+                    <th class="col-tutor">Tutor</th>
+                    <th v-for="slot in getActiveSlotsForDay(giorno)" :key="slot.id" class="col-slot">
+                      {{ slot.label }}
+                    </th>
+                    <th class="col-actions">Azioni</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- ✅ Se ci sono tutor, mostra le loro righe -->
+                  <tr v-for="tutorData in giorno.tutorsRecap" :key="tutorData.tutor.id">
+                    <!-- Colonna Tutor -->
+                    <td class="tutor-name-cell">
+                      {{ tutorData.tutor.firstName }} {{ tutorData.tutor.lastName.charAt(0) }}.
+                    </td>
+
+                    <!-- Celle Slot -->
+                    <td 
+                      v-for="slot in getActiveSlotsForDay(giorno)" 
+                      :key="slot.id"
+                      class="slot-cell"
+                      :class="getSlotCellClass(giorno, tutorData.tutor.id, slot.start)"
+                      @click="openManageSlotModal(giorno.data, tutorData.tutor.id, slot.start, slot.end)"
+                    >
+                      <!-- Badge Mezza Lezione -->
+                      <span 
+                        v-if="isHalfLessonSlot(giorno, tutorData.tutor.id, slot.start)" 
+                        class="badge-half-slot"
+                      >
+                        ½
+                      </span>
+
+                      <div class="slot-content">
+                        <!-- Alunni nello slot -->
+                        <div
+                          v-for="student in getStudentsInSlot(giorno, tutorData.tutor.id, slot.start)"
+                          :key="student.id"
+                          class="student-chip"
+                        >
+                          {{ student.firstName }} {{ student.lastName.charAt(0) }}.
+                        </div>
+
+                        <!-- Slot vuoto -->
+                        <div v-if="getStudentsInSlot(giorno, tutorData.tutor.id, slot.start).length === 0" class="empty-slot">
+                          +
+                        </div>
+                      </div>
+                    </td>
+
+                    <!-- ✅ NUOVA COLONNA AZIONI: Pulsante Elimina Riga -->
+                    <td class="actions-cell">
+                      <button 
+                        @click.stop="confirmDeleteTutorRow(giorno.data, tutorData.tutor.id, tutorData.tutor.firstName, tutorData.tutor.lastName)"
+                        class="btn-delete-row"
+                        title="Elimina tutte le lezioni del tutor"
+                      >
+                        🗑️
+                      </button>
+                    </td>
+                  </tr>
+
+                  <!-- ✅ Se NON ci sono tutor, mostra riga placeholder con slot standard -->
+                  <tr v-if="giorno.tutorsRecap.length === 0">
+                    <td class="tutor-name-cell empty-day">
+                      <em style="color: #9ca3af;">Nessuna lezione</em>
+                    </td>
+                    <td 
+                      v-for="slot in getActiveSlotsForDay(giorno)" 
+                      :key="slot.id"
+                      class="slot-cell empty"
+                      @click="openManageSlotModal(giorno.data, null, slot.start, slot.end)"
+                    >
+                      <div class="slot-content">
+                        <div class="empty-slot">+</div>
+                      </div>
+                    </td>
+                    <td class="actions-cell"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Bottone Aggiungi Tutor -->
+            <button class="btn-add-tutor" @click="openAddTutorModal(giorno.data)">
+              + Aggiungi Tutor
+            </button>
+          </div>
+
           <!-- Recap per Tutor -->
           <div v-if="giorno.tutorsRecap && giorno.tutorsRecap.length > 0" class="tutors-recap">
             <h4 class="recap-title">👨‍🏫 Riepilogo Tutor</h4>
@@ -140,25 +238,46 @@
               </div>
             </div>
           </div>
-
-          <p class="coming-soon">🚧 Griglia dettagliata tutor×slot in arrivo...</p>
         </div>
       </div>
     </div>
   </div>
 
-   <CreateLessonModal
+  <CreateLessonModal
     v-if="showCreateModal"
     :initial-date="selectedDate"
     @close="showCreateModal = false"
     @saved="handleLessonSaved"
   />
+
+  <!-- Modal Gestione Slot -->
+  <ManageSlotModal
+    v-if="showManageSlotModal && selectedSlot"
+    :date="selectedSlot.date"
+    :tutor-id="selectedSlot.tutorId"
+    :tutor-name="selectedSlot.tutorName"
+    :slot-start="selectedSlot.slotStart"
+    :slot-end="selectedSlot.slotEnd"
+    :time-slot-id="selectedSlot.timeSlotId"
+    @close="showManageSlotModal = false"
+    @saved="handleSlotSaved"
+  />
+
+  <AddQuickLessonModal
+  v-if="showAddTutorModal && selectedDateForTutor"
+  :date="selectedDateForTutor"
+  @close="showAddTutorModal = false"
+  @saved="handleTutorAdded"
+/>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { calendarAPI } from '@/services/api';
+import { calendarAPI, timeslotsAPI, tutorsAPI, lessonsAPI } from '@/services/api';
 import CreateLessonModal from '@/components/calendar/CreateLessonModal.vue';
+import ManageSlotModal from '@/components/calendar/ManageSlotModal.vue';
+import AddQuickLessonModal from '@/components/calendar/AddQuickLessonModal.vue'; // ✅ NUOVO
+
 
 // ========================================
 // STATE
@@ -174,12 +293,25 @@ const filtroTutor = ref('');
 const tutors = ref([]);
 
 // Data corrente
-const currentMonth = ref(new Date().getMonth() + 1); // 1-12
+const currentMonth = ref(new Date().getMonth() + 1);
 const currentYear = ref(new Date().getFullYear());
 
 // Modal Nuova Lezione
 const showCreateModal = ref(false);
 const selectedDate = ref(null);
+
+// TimeSlots dal database
+const timeSlots = ref([]);
+
+// ✅ Slot STANDARD che devono sempre comparire
+const STANDARD_SLOTS = ['15:30', '16:30', '17:30'];
+
+const showManageSlotModal = ref(false);
+const selectedSlot = ref(null);
+
+// ✅ NUOVO: Modal Aggiungi Tutor
+const showAddTutorModal = ref(false);
+const selectedDateForTutor = ref(null);
 
 // ========================================
 // COMPUTED
@@ -194,13 +326,9 @@ const nomeMesseAnno = computed(() => {
   return formatter.format(date).charAt(0).toUpperCase() + formatter.format(date).slice(1);
 });
 
-// ========================================
-// COMPUTED - Raggruppa lezioni per tutor
-// ========================================
-
+// Raggruppa lezioni per tutor con studenti unici
 const giorniWithTutorRecap = computed(() => {
   return giorni.value.map(giorno => {
-    // Raggruppa lezioni per tutor
     const tutorsMap = new Map();
     
     giorno.lezioni.forEach(lezione => {
@@ -219,16 +347,33 @@ const giorniWithTutorRecap = computed(() => {
       
       const tutorData = tutorsMap.get(tutorId);
       tutorData.numeroLezioni++;
-       lezione.lessonStudents?.forEach(ls => {
+      
+      lezione.lessonStudents?.forEach(ls => {
         tutorData.studentiUnici.add(ls.student.id);
       });
+      
       tutorData.compensoTotale += parseFloat(lezione.compensoTutor || 0);
       tutorData.lezioni.push(lezione);
     });
     
+    // Converti Set in count
+    let tutorsRecap = Array.from(tutorsMap.values()).map(tutorData => ({
+      tutor: tutorData.tutor,
+      numeroLezioni: tutorData.numeroLezioni,
+      numeroStudenti: tutorData.studentiUnici.size,
+      compensoTotale: tutorData.compensoTotale,
+      lezioni: tutorData.lezioni,
+    }));
+
+    // ✅ Se non ci sono tutor (giorno senza lezioni), crea lista vuota
+    // per permettere comunque il rendering della griglia con slot standard
+    if (tutorsRecap.length === 0) {
+      tutorsRecap = [];
+    }
+    
     return {
       ...giorno,
-      tutorsRecap: Array.from(tutorsMap.values()),
+      tutorsRecap,
     };
   });
 });
@@ -236,6 +381,30 @@ const giorniWithTutorRecap = computed(() => {
 // ========================================
 // FUNCTIONS
 // ========================================
+
+const loadTimeSlots = async () => {
+  try {
+    const response = await timeslotsAPI.getAll({ attivo: 'true' });
+    timeSlots.value = response.data.timeSlots.map(slot => ({
+      id: slot.id,
+      start: slot.oraInizio,
+      end: slot.oraFine,
+      label: `${slot.oraInizio.substring(0, 5)}-${slot.oraFine.substring(0, 5)}`,
+      isStandard: STANDARD_SLOTS.includes(slot.oraInizio),
+    }));
+    
+    console.log('🕒 TimeSlots caricati:', timeSlots.value);
+    console.log('🎯 Slot standard:', STANDARD_SLOTS);
+    
+  } catch (error) {
+    console.error('Errore caricamento slot orari:', error);
+    timeSlots.value = [
+      { id: 'fallback-1', start: '15:30:00', end: '16:30:00', label: '15:30-16:30', isStandard: true },
+      { id: 'fallback-2', start: '16:30:00', end: '17:30:00', label: '16:30-17:30', isStandard: true },
+      { id: 'fallback-3', start: '17:30:00', end: '18:30:00', label: '17:30-18:30', isStandard: true },
+    ];
+  }
+};
 
 const loadGiorni = async () => {
   loading.value = true;
@@ -336,10 +505,138 @@ const getMargineClass = (margine) => {
   return 'neutral';
 };
 
+// ========================================
+// FUNCTIONS GRIGLIA
+// ========================================
+
+const getActiveSlotsForDay = (giorno) => {
+  console.log('🔍 getActiveSlotsForDay chiamata per:', giorno.data);
+  console.log('📋 Lezioni nel giorno:', giorno.lezioni);
+  
+  // 1. Se non ci sono lezioni, mostra solo gli slot standard
+  if (!giorno.lezioni || giorno.lezioni.length === 0) {
+    const standardSlots = timeSlots.value.filter(slot => STANDARD_SLOTS.includes(slot.start));
+    console.log('✅ Nessuna lezione → Slot standard:', standardSlots);
+    return standardSlots;
+  }
+
+  // 2. Trova slot usati nelle lezioni
+  const usedSlotIds = new Set();
+  
+  giorno.lezioni.forEach(lezione => {
+    if (lezione.timeSlot?.oraInizio) {
+      usedSlotIds.add(lezione.timeSlot.oraInizio);
+      console.log('🕒 Slot usato:', lezione.timeSlot.oraInizio);
+    }
+  });
+  
+  // 3. Filtra slot da mostrare: STANDARD oppure con lezioni
+  const result = timeSlots.value.filter(slot => {
+    const isStandard = STANDARD_SLOTS.includes(slot.start);
+    const hasLesson = usedSlotIds.has(slot.start);
+    
+    if (isStandard) console.log(`✅ Slot ${slot.start} è STANDARD → mostra`);
+    if (hasLesson) console.log(`📌 Slot ${slot.start} ha lezioni → mostra`);
+    
+    return isStandard || hasLesson;
+  });
+  
+  console.log('🎯 Slot finali da mostrare:', result);
+  return result;
+};
+
+// Ottieni studenti in uno slot specifico
+const getStudentsInSlot = (giorno, tutorId, slotStart) => {
+  const lesson = giorno.lezioni.find(
+    l => l.tutor?.id === tutorId && l.timeSlot?.oraInizio === slotStart
+  );
+
+  if (!lesson || !lesson.lessonStudents) return [];
+
+  return lesson.lessonStudents.map(ls => ({
+    id: ls.student.id,
+    firstName: ls.student.firstName,
+    lastName: ls.student.lastName,
+    mezzaLezione: ls.mezzaLezione || false,
+  }));
+};
+
+// Class per cella slot
+const getSlotCellClass = (giorno, tutorId, slotStart) => {
+  const students = getStudentsInSlot(giorno, tutorId, slotStart);
+  return {
+    'has-students': students.length > 0,
+    'empty': students.length === 0,
+  };
+};
+
+// Verifica se lo slot ha almeno uno studente con mezza lezione
+const isHalfLessonSlot = (giorno, tutorId, slotStart) => {
+  const lesson = giorno.lezioni.find(
+    l => l.tutor?.id === tutorId && l.timeSlot?.oraInizio === slotStart
+  );
+
+  if (!lesson || !lesson.lessonStudents) return false;
+
+  // Ritorna true se ALMENO uno studente ha mezzaLezione = true
+  return lesson.lessonStudents.some(ls => ls.mezzaLezione === true);
+};
+
+// Modal gestione slot
+const openManageSlotModal = (date, tutorId, slotStart, slotEnd) => {
+  // Trova tutor
+  const giorno = giorniWithTutorRecap.value.find(g => g.data === date);
+  const tutorData = giorno?.tutorsRecap.find(t => t.tutor.id === tutorId);
+  
+  if (!tutorData) {
+    console.error('Tutor non trovato');
+    return;
+  }
+
+  // Trova timeSlot ID
+  const slot = timeSlots.value.find(s => s.start === slotStart);
+  if (!slot) {
+    console.error('TimeSlot non trovato');
+    return;
+  }
+
+  selectedSlot.value = {
+    date,
+    tutorId,
+    tutorName: `${tutorData.tutor.firstName} ${tutorData.tutor.lastName}`,
+    slotStart,
+    slotEnd,
+    timeSlotId: slot.id,
+  };
+
+  showManageSlotModal.value = true;
+};
+
+const handleSlotSaved = () => {
+  showManageSlotModal.value = false;
+  selectedSlot.value = null;
+  loadGiorni(); // Ricarica calendario
+};
+
+// Modal aggiungi tutor
+const openAddTutorModal = (date) => {
+  selectedDateForTutor.value = date;
+  showAddTutorModal.value = true;
+};
+
+const handleTutorAdded = () => {
+  showAddTutorModal.value = false;
+  selectedDateForTutor.value = null;
+  loadGiorni(); // Ricarica calendario
+};
+
+
+// ✅ CARICA LISTA TUTOR
 const loadTutors = async () => {
   try {
-    // TODO: Implementare endpoint tutors
-    tutors.value = [];
+    const response = await tutorsAPI.getAll();
+    tutors.value = response.data.tutors || [];
+    console.log('✅ Tutor caricati:', tutors.value.length);
   } catch (error) {
     console.error('Errore caricamento tutor:', error);
   }
@@ -352,20 +649,90 @@ const openCreateModal = (date = null) => {
 
 const handleLessonSaved = () => {
   showCreateModal.value = false;
-  loadGiorni(); // Ricarica il calendario mantenendo il mese corrente
+  loadGiorni();
+};
+
+// ========================================
+// ✅ NUOVE FUNZIONI: ELIMINA RIGA TUTOR
+// ========================================
+
+/**
+ * Conferma eliminazione tutte le lezioni del tutor
+ */
+const confirmDeleteTutorRow = (date, tutorId, tutorFirstName, tutorLastName) => {
+  const tutorName = `${tutorFirstName} ${tutorLastName}`;
+  const formattedDate = formatDate(date);
+  
+  const confirmed = confirm(
+    `⚠️ ATTENZIONE!\n\n` +
+    `Stai per eliminare TUTTE le lezioni di ${tutorName} del ${formattedDate}.\n\n` +
+    `Questa azione:\n` +
+    `• Eliminerà tutte le lezioni del tutor in questa giornata\n` +
+    `• Ripristinerà le ore nei pacchetti degli studenti\n` +
+    `• NON può essere annullata\n\n` +
+    `Sei sicuro di voler continuare?`
+  );
+  
+  if (confirmed) {
+    deleteTutorLessons(date, tutorId, tutorName);
+  }
+};
+
+/**
+ * Elimina tutte le lezioni del tutor nella data specificata
+ */
+const deleteTutorLessons = async (date, tutorId, tutorName) => {
+  try {
+    loading.value = true;
+    
+    const response = await lessonsAPI.deleteBulkByTutorDate(tutorId, date);
+    
+    alert(
+      `✅ Successo!\n\n` +
+      `${response.data.deletedCount} lezioni di ${tutorName} eliminate.\n` +
+      `Le ore sono state ripristinate nei pacchetti degli studenti.`
+    );
+    
+    // Ricarica calendario
+    await loadGiorni();
+    
+  } catch (error) {
+    console.error('Errore eliminazione lezioni tutor:', error);
+    alert(
+      `❌ Errore!\n\n` +
+      `Non è stato possibile eliminare le lezioni.\n` +
+      `Dettaglio: ${error.response?.data?.error || error.message}`
+    );
+  } finally {
+    loading.value = false;
+  }
+};
+
+/**
+ * Formatta data per visualizzazione
+ */
+const formatDate = (dateStr) => {
+  const date = new Date(dateStr);
+  const formatter = new Intl.DateTimeFormat('it-IT', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+  return formatter.format(date);
 };
 
 onMounted(() => {
+  loadTimeSlots();
+  loadTutors(); // ✅ Carica tutor all'avvio
   loadGiorni();
-  loadTutors();
 });
 </script>
 
-
 <style scoped>
-/* ========================================
-   LAYOUT BASE
-   ======================================== */
+/* ======================================== 
+   LAYOUT BASE 
+======================================== */
 .calendar-page {
   padding: 24px;
   max-width: 1400px;
@@ -479,6 +846,29 @@ onMounted(() => {
   min-width: 200px;
 }
 
+.filter-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-primary {
+  padding: 10px 20px;
+  background: #3b82f6;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
 .btn-secondary {
   padding: 8px 16px;
   background: #f3f4f6;
@@ -522,9 +912,9 @@ onMounted(() => {
   color: #d1d5db;
 }
 
-/* ========================================
-   GIORNI
-   ======================================== */
+/* ======================================== 
+   GIORNI 
+======================================== */
 .days-list {
   display: flex;
   flex-direction: column;
@@ -656,108 +1046,267 @@ onMounted(() => {
   background: #f9fafb;
 }
 
-.coming-soon {
-  text-align: center;
-  padding: 40px;
-  color: #6b7280;
-  font-size: 16px;
+/* ======================================== 
+   GRIGLIA TUTOR × SLOT 
+======================================== */
+.day-grid-section {
+  margin-bottom: 32px;
 }
 
-.lessons-preview {
+.grid-header {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.grid-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.lesson-item {
+.slot-grid-wrapper {
+  overflow-x: auto;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.slot-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Header Tabella */
+.slot-grid thead th {
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  padding: 16px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 3px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.slot-grid .col-tutor {
+  text-align: left;
+  padding-left: 20px;
+  min-width: 140px;
+  font-size: 14px;
+}
+
+.slot-grid .col-slot {
+  min-width: 160px;
+  border-left: 2px solid #e2e8f0;
+}
+
+.slot-grid .col-actions {
+  min-width: 80px;
+  text-align: center;
+}
+
+/* Riga Tutor */
+.slot-grid tbody tr {
+  transition: background 0.2s;
+}
+
+.slot-grid tbody tr:hover {
+  background: #fafbfc;
+}
+
+.slot-grid tbody tr + tr {
+  border-top: 2px solid #e2e8f0;
+}
+
+/* Colonna Nome Tutor */
+.tutor-name-cell {
+  padding: 20px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #1e293b;
+  background: linear-gradient(135deg, #fafbfc, #f8fafc);
+  border-right: 3px solid #cbd5e1;
+  position: sticky;
+  left: 0;
+  z-index: 5;
+}
+
+/* Celle Slot */
+.slot-cell {
+  padding: 12px;
+  border-left: 2px solid #e2e8f0;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: all 0.2s;
+  vertical-align: top;
+  min-height: 80px;
+  position: relative;
+}
+
+.slot-cell.empty {
+  background: #fafbfc;
+}
+
+.slot-cell.has-students {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+}
+
+.slot-cell:hover {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  border-color: #3b82f6;
+  transform: scale(1.02);
+  box-shadow: inset 0 0 0 2px #3b82f6;
+  z-index: 2;
+}
+
+/* Badge Mezza Lezione a livello SLOT (in alto a destra) */
+.badge-half-slot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 2px 4px rgba(146, 64, 14, 0.3);
+  z-index: 1;
+}
+
+/* Contenuto Slot */
+.slot-content {
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* Chip Studente */
+.student-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: white;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  transition: all 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.student-chip:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Slot Vuoto (CENTRATO) */
+.empty-slot {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 14px;
-}
-
-.lesson-time {
-  font-weight: 600;
-  color: #111827;
-  min-width: 60px;
-}
-
-.lesson-tutor {
-  color: #6b7280;
-  min-width: 120px;
-}
-
-.lesson-students {
-  color: #6b7280;
-}
-
-.lesson-type {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.type-singola {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.type-gruppo {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.type-maxi {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-@media (max-width: 768px) {
-  .calendar-header {
-    flex-direction: column;
-  }
-  
-  .day-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: flex-start;
-  }
-}
-
-/* ... stili esistenti ... */
-
-/* Bottone Nuova Lezione */
-.btn-primary {
-  padding: 10px 20px;
-  background: #3b82f6;
-  border: 1px solid #3b82f6;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: white;
-  cursor: pointer;
+  justify-content: center;
+  width: 100%;
+  height: 60px;
+  color: #cbd5e1;
+  font-size: 32px;
+  font-weight: 200;
   transition: all 0.2s;
 }
 
-.btn-primary:hover {
-  background: #2563eb;
-  border-color: #2563eb;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+.slot-cell:hover .empty-slot {
+  color: #3b82f6;
+  transform: scale(1.1);
 }
 
-.filter-actions {
-  display: flex;
-  gap: 12px;
+/* ✅ COLONNA AZIONI: Pulsante Elimina Riga */
+.actions-cell {
+  padding: 12px;
+  text-align: center;
+  vertical-align: middle;
+  border-left: 2px solid #e2e8f0;
 }
-/* Recap Tutor */
+
+.btn-delete-row {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  border: 1.5px solid #ef4444;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.2);
+}
+
+.btn-delete-row:hover {
+  background: linear-gradient(135deg, #fecaca, #fca5a5);
+  border-color: #dc2626;
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.4);
+}
+
+.btn-delete-row:active {
+  transform: scale(0.95);
+}
+
+/* Bottone Aggiungi Tutor */
+.btn-add-tutor {
+  width: 100%;
+  padding: 16px;
+  background: transparent;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-add-tutor:hover {
+  background: #f8fafc;
+  border-color: #64748b;
+  border-style: solid;
+  color: #334155;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* ======================================== 
+   RECAP TUTOR 
+======================================== */
 .tutors-recap {
-  margin-bottom: 20px;
+  margin-top: 24px;
 }
 
 .recap-title {
@@ -809,4 +1358,44 @@ onMounted(() => {
   font-weight: 600;
 }
 
+/* ======================================== 
+   RESPONSIVE 
+======================================== */
+@media (max-width: 768px) {
+  .calendar-header {
+    flex-direction: column;
+  }
+  
+  .day-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .tutor-name-cell {
+    padding: 12px;
+    font-size: 14px;
+  }
+  
+  .slot-cell {
+    padding: 8px;
+    min-height: 60px;
+  }
+  
+  .slot-content {
+    min-height: 50px;
+  }
+  
+  .slot-grid .col-slot {
+    min-width: 120px;
+  }
+}
+
+/* Cella tutor per giorni senza lezioni */
+.tutor-name-cell.empty-day {
+  background: linear-gradient(135deg, #f9fafb, #f3f4f6);
+  color: #9ca3af;
+  font-style: italic;
+  font-weight: 500;
+}
 </style>

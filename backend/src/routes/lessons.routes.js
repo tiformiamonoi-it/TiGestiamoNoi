@@ -12,6 +12,7 @@ const {
   createLesson,
   updateLesson,
   deleteLesson,
+  deleteLessonsByTutorAndDate, // ✅ AGGIUNTA QUI
   getCalendarDays,
   getAvailableStudents,
 } = require('../controllers/lessons.controller');
@@ -60,7 +61,6 @@ router.post(
     body('data').isISO8601().withMessage('Data non valida'),
     body('studenti').isArray({ min: 1 }).withMessage('Almeno uno studente richiesto'),
     body('studenti.*.studentId').notEmpty().withMessage('studentId obbligatorio'),
-    body('studenti.*.packageId').notEmpty().withMessage('packageId obbligatorio'),
   ],
   createLesson
 );
@@ -78,8 +78,15 @@ router.put(
 );
 
 /**
+ * DELETE /api/lessons/bulk/by-tutor-date
+ * ✅ Elimina tutte le lezioni di un tutor in una data
+ * ⚠️ DEVE STARE PRIMA DI DELETE /:id
+ */
+router.delete('/bulk/by-tutor-date', deleteLessonsByTutorAndDate);
+
+/**
  * DELETE /api/lessons/:id
- * Elimina lezione
+ * Elimina singola lezione
  */
 router.delete('/:id', deleteLesson);
 

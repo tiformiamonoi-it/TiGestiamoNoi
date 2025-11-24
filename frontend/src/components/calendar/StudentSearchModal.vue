@@ -14,6 +14,7 @@
           type="text"
           placeholder="🔍 Cerca per nome o cognome..."
           class="search-input"
+          autofocus
         />
       </div>
 
@@ -35,13 +36,23 @@
           <input
             type="checkbox"
             :checked="selectedStudents.has(student.id)"
+            :disabled="selectedIds.includes(student.id)"
             @click.stop="toggleStudent(student)"
           />
           
           <div class="student-info">
             <div class="student-name">
               {{ student.firstName }} {{ student.lastName }}
+              
+              <!-- Badge già aggiunto -->
+              <span
+                v-if="selectedIds.includes(student.id)"
+                class="badge-already-added"
+              >
+                ✓ Già aggiunto
+              </span>
             </div>
+            
             <div class="student-packages">
               <span
                 v-for="pkg in student.pacchetti"
@@ -96,14 +107,31 @@
 import { ref, computed, onMounted } from 'vue';
 import { calendarAPI } from '@/services/api';
 
+// ========================================
+// PROPS & EMITS
+// ========================================
 
+const props = defineProps({
+  selectedIds: {
+    type: Array,
+    default: () => [],
+  },
+});
 
 const emit = defineEmits(['add-students', 'close']);
+
+// ========================================
+// STATE
+// ========================================
 
 const loading = ref(false);
 const students = ref([]);
 const searchQuery = ref('');
 const selectedStudents = ref(new Set());
+
+// ========================================
+// COMPUTED
+// ========================================
 
 // Filtra studenti per ricerca
 const filteredStudents = computed(() => {
@@ -115,6 +143,10 @@ const filteredStudents = computed(() => {
     s.lastName.toLowerCase().includes(query)
   );
 });
+
+// ========================================
+// FUNCTIONS
+// ========================================
 
 const loadStudents = async () => {
   loading.value = true;
@@ -130,11 +162,17 @@ const loadStudents = async () => {
 };
 
 const toggleStudent = (student) => {
+  // Non permettere toggle se già aggiunto alla lezione
+  if (props.selectedIds.includes(student.id)) return;
+  
   if (selectedStudents.value.has(student.id)) {
     selectedStudents.value.delete(student.id);
   } else {
     selectedStudents.value.add(student.id);
   }
+  
+  // Force reactivity
+  selectedStudents.value = new Set(selectedStudents.value);
 };
 
 const handleAdd = () => {
@@ -169,6 +207,10 @@ const getPackageClass = (pkg) => {
   return 'package-active';
 };
 
+// ========================================
+// LIFECYCLE
+// ========================================
+
 onMounted(() => {
   loadStudents();
 });
@@ -185,7 +227,8 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 1100;
+  padding: 20px;
 }
 
 .modal-content {
@@ -220,9 +263,16 @@ onMounted(() => {
   cursor: pointer;
   color: #6b7280;
   transition: color 0.2s;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
 }
 
 .btn-close:hover {
+  background: #f3f4f6;
   color: #111827;
 }
 
@@ -237,6 +287,12 @@ onMounted(() => {
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
 }
 
 .loading-state {
@@ -293,6 +349,11 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.student-row input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .student-info {
   flex: 1;
 }
@@ -301,6 +362,18 @@ onMounted(() => {
   font-weight: 500;
   color: #111827;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-already-added {
+  padding: 2px 8px;
+  background: #d1fae5;
+  color: #065f46;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .student-packages {
@@ -398,5 +471,14 @@ onMounted(() => {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .modal-content {
+    max-width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
 }
 </style>

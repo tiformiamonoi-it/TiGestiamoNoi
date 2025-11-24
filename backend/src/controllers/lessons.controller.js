@@ -149,7 +149,7 @@ const getLessonById = async (req, res, next) => {
 /**
  * POST /api/lessons
  * Crea nuova lezione con scalamento automatico
- * Body: { tutorId, timeSlotId, data, studenti: [{studentId, packageId, mezzaLezione}], forzaGruppo, note }
+ * ✅ FIX: Per pacchetti MENSILI, scala -1 giorno solo se prima lezione della data
  */
 const createLesson = async (req, res, next) => {
   try {
@@ -162,7 +162,7 @@ const createLesson = async (req, res, next) => {
       tutorId,
       timeSlotId,
       data,
-      studenti, // Array: [{ studentId, packageId, mezzaLezione }]
+      studenti,
       forzaGruppo = false,
       note,
     } = req.body;
@@ -174,11 +174,16 @@ const createLesson = async (req, res, next) => {
       });
     }
 
+    const invalidStudents = studenti.filter(s => !s.studentId);
+    if (invalidStudents.length > 0) {
+      return res.status(400).json({
+        error: 'Ogni studente deve avere studentId',
+      });
+    }
+
     // ✅ STEP 1: Calcola tipo lezione e compenso
     const numeroStudenti = studenti.length;
     const tipoLezione = determinaTipoLezione(numeroStudenti, forzaGruppo);
-    
-    // Per calcolo compenso, usa la prima mezza lezione (se presente)
     const primaMezzaLezione = studenti[0]?.mezzaLezione || false;
     const compensoTutor = calcolaCompensoTutor(tipoLezione, primaMezzaLezione);
 
@@ -197,31 +202,75 @@ const createLesson = async (req, res, next) => {
         },
       });
 
-      // Array per studenti aggiornati
       const studentiAggiornati = [];
 
-      // Per ogni studente: scala ore pacchetto
+      // ✅ Per ogni studente: controlla se ha già lezioni nello stesso giorno
       for (const studentData of studenti) {
-        const { studentId, packageId, mezzaLezione = false } = studentData;
+        const { studentId, mezzaLezione = false } = studentData;
 
-        // Recupera pacchetto
-        const pacchetto = await tx.package.findUnique({
-          where: { id: packageId },
-        });
+        // Trova pacchetto attivo
+        // ✅ LOGICA CORRETTA: Escludi solo pacchetti SCADUTI o ESAURITI
+            // ✅ VERSIONE CORRETTA con NOT
+            const pacchetto = await tx.package.findFirst({
+              where: {
+                studentId: studentId,
+                stati: {
+                  has: 'ATTIVO', // Deve avere ATTIVO
+                },
+                // ✅ E NON deve avere questi stati
+                NOT: [
+                  { stati: { has: 'SCADUTO' } },
+                  { stati: { has: 'ESAURITO' } },
+                  { stati: { has: 'PAG_SOSPESO' } },
+                ],
+              },
+              orderBy: { createdAt: 'asc' }, // Più vecchio prima
+            });
+
+
 
         if (!pacchetto) {
-          throw new Error(`Pacchetto ${packageId} non trovato`);
+          throw new Error(`Nessun pacchetto attivo trovato per studente ${studentId}`);
         }
 
-        // Calcola nuovi valori pacchetto
-        const nuoviValori = calcolaNuoviValoriPacchetto(pacchetto, mezzaLezione);
+        // ✅ Verifica se studente ha già lezioni in questa data
+        const dataInizio = new Date(data);
+        dataInizio.setHours(0, 0, 0, 0);
+        const dataFine = new Date(data);
+        dataFine.setHours(23, 59, 59, 999);
 
-        // Aggiorna pacchetto con ore scalate
+        const lezioniEsistentiOggi = await tx.lesson.count({
+          where: {
+            data: {
+              gte: dataInizio,
+              lte: dataFine,
+            },
+            lessonStudents: {
+              some: {
+                studentId: studentId,
+              },
+            },
+          },
+        });
+
+        const isPrimaLezioneOggi = lezioniEsistentiOggi === 0;
+
+        // ✅ Scala ore (sempre -1h)
+        let oreResiduo = parseFloat(pacchetto.oreResiduo) - 1.0;
+        let giorniResiduo = pacchetto.giorniResiduo ? parseInt(pacchetto.giorniResiduo) : null;
+
+        // ✅ Se pacchetto MENSILE: scala -1 giorno SOLO se prima lezione del giorno
+        if (pacchetto.tipo === 'MENSILE' && isPrimaLezioneOggi && giorniResiduo !== null) {
+          giorniResiduo = Math.max(0, giorniResiduo - 1);
+          console.log(`✅ Prima lezione del giorno per studente ${studentId}: -1 giorno → giorniResiduo=${giorniResiduo}`);
+        }
+
+        // Aggiorna pacchetto
         const updatedPackage = await tx.package.update({
-          where: { id: packageId },
+          where: { id: pacchetto.id },
           data: {
-            oreResiduo: nuoviValori.oreResiduo,
-            giorniResiduo: nuoviValori.giorniResiduo,
+            oreResiduo: parseFloat(oreResiduo.toFixed(2)),
+            giorniResiduo: giorniResiduo,
           },
         });
 
@@ -230,23 +279,24 @@ const createLesson = async (req, res, next) => {
           data: {
             lessonId: newLesson.id,
             studentId,
-            packageId,
-            oreScalate: 1.0, // Sempre -1h
+            packageId: pacchetto.id,
+            oreScalate: 1.0,
             mezzaLezione,
           },
         });
 
         studentiAggiornati.push({
           studentId,
-          packageId,
+          packageId: pacchetto.id,
           oreResiduo: updatedPackage.oreResiduo,
+          giorniResiduo: updatedPackage.giorniResiduo,
         });
       }
 
       return { newLesson, studentiAggiornati };
     });
 
-    // ✅ STEP 3: Aggiorna stati pacchetti (fuori transazione)
+    // ✅ STEP 3: Aggiorna stati pacchetti
     for (const student of result.studentiAggiornati) {
       await updatePackageStates(prisma, student.packageId);
     }
@@ -289,7 +339,7 @@ const updateLesson = async (req, res, next) => {
   try {
     const { id } = req.params;
     const {
-      studenti, // Nuovo array studenti
+      studenti,
       forzaGruppo,
       note,
     } = req.body;
@@ -343,7 +393,6 @@ const updateLesson = async (req, res, next) => {
 
     // ✅ STEP 3: Scala ore nuovi studenti
     await prisma.$transaction(async (tx) => {
-      // Aggiorna lezione
       await tx.lesson.update({
         where: { id },
         data: {
@@ -354,20 +403,38 @@ const updateLesson = async (req, res, next) => {
         },
       });
 
-      // Scala ore per nuovi studenti
       for (const studentData of studenti) {
-        const { studentId, packageId, mezzaLezione = false } = studentData;
+        const { studentId, mezzaLezione = false } = studentData;
 
-        const pacchetto = await tx.package.findUnique({
-          where: { id: packageId },
-        });
+        // ✅ LOGICA CORRETTA: Escludi solo pacchetti SCADUTI o ESAURITI
+          // ✅ VERSIONE CORRETTA con NOT
+            const pacchetto = await tx.package.findFirst({
+              where: {
+                studentId: studentId,
+                stati: {
+                  has: 'ATTIVO', // Deve avere ATTIVO
+                },
+                // ✅ E NON deve avere questi stati
+                NOT: [
+                  { stati: { has: 'SCADUTO' } },
+                  { stati: { has: 'ESAURITO' } },
+                  { stati: { has: 'PAG_SOSPESO' } },
+                ],
+              },
+              orderBy: { createdAt: 'asc' }, // Più vecchio prima
+            });
 
-        if (!pacchetto) continue;
+
+
+        if (!pacchetto) {
+          console.warn(`Nessun pacchetto attivo per studente ${studentId}`);
+          continue;
+        }
 
         const nuoviValori = calcolaNuoviValoriPacchetto(pacchetto, mezzaLezione);
 
         await tx.package.update({
-          where: { id: packageId },
+          where: { id: pacchetto.id },
           data: {
             oreResiduo: nuoviValori.oreResiduo,
             giorniResiduo: nuoviValori.giorniResiduo,
@@ -378,7 +445,7 @@ const updateLesson = async (req, res, next) => {
           data: {
             lessonId: id,
             studentId,
-            packageId,
+            packageId: pacchetto.id,
             oreScalate: 1.0,
             mezzaLezione,
           },
@@ -434,7 +501,6 @@ const deleteLesson = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // Recupera lezione con studenti
     const lesson = await prisma.lesson.findUnique({
       where: { id },
       include: {
@@ -450,7 +516,7 @@ const deleteLesson = async (req, res, next) => {
       return res.status(404).json({ error: 'Lezione non trovata' });
     }
 
-    // ✅ STEP 1: Ripristina ore pacchetti
+    // ✅ Ripristina ore pacchetti
     await prisma.$transaction(async (tx) => {
       for (const student of lesson.lessonStudents) {
         const pacchetto = await tx.package.findUnique({
@@ -469,18 +535,16 @@ const deleteLesson = async (req, res, next) => {
         }
       }
 
-      // Elimina relazioni studenti (cascade dovrebbe farlo automaticamente)
       await tx.lessonStudent.deleteMany({
         where: { lessonId: id },
       });
 
-      // Elimina lezione
       await tx.lesson.delete({
         where: { id },
       });
     });
 
-    // ✅ STEP 2: Aggiorna stati pacchetti
+    // ✅ Aggiorna stati pacchetti
     for (const student of lesson.lessonStudents) {
       await updatePackageStates(prisma, student.packageId);
     }
@@ -491,6 +555,146 @@ const deleteLesson = async (req, res, next) => {
     });
   } catch (error) {
     console.error('Errore eliminazione lezione:', error);
+    next(error);
+  }
+};
+
+// ============================================
+// ✅ ELIMINA TUTTE LE LEZIONI TUTOR/DATA
+// ============================================
+
+/**
+ * DELETE /api/lessons/bulk/by-tutor-date
+ * Elimina tutte le lezioni di un tutor in una data
+ * ✅ FIX: Ripristina +1 giorno PER STUDENTE (non per lezione)
+ */
+const deleteLessonsByTutorAndDate = async (req, res, next) => {
+  try {
+    const { tutorId, data } = req.query;
+
+    if (!tutorId || !data) {
+      return res.status(400).json({
+        error: 'Parametri obbligatori: tutorId, data (YYYY-MM-DD)',
+      });
+    }
+
+    const dataInizio = new Date(data);
+    dataInizio.setHours(0, 0, 0, 0);
+    const dataFine = new Date(data);
+    dataFine.setHours(23, 59, 59, 999);
+
+    // Trova tutte le lezioni
+    const lessons = await prisma.lesson.findMany({
+      where: {
+        tutorId: tutorId,
+        data: {
+          gte: dataInizio,
+          lte: dataFine,
+        },
+      },
+      include: {
+        lessonStudents: {
+          include: {
+            package: true,
+            student: true,
+          },
+        },
+      },
+    });
+
+    if (lessons.length === 0) {
+      return res.status(404).json({
+        error: 'Nessuna lezione trovata',
+      });
+    }
+
+    // ✅ Raggruppa per studente
+    const studentiMap = new Map();
+
+    lessons.forEach(lesson => {
+      lesson.lessonStudents.forEach(ls => {
+        const studentId = ls.studentId;
+
+        if (!studentiMap.has(studentId)) {
+          studentiMap.set(studentId, {
+            studentId,
+            packageId: ls.packageId,
+            packageTipo: ls.package?.tipo,
+            oreRipristinare: 0,
+            giorniRipristinare: 0,
+            studentName: `${ls.student.firstName} ${ls.student.lastName}`,
+          });
+        }
+
+        const studentData = studentiMap.get(studentId);
+        studentData.oreRipristinare += 1.0;
+
+        // ✅ +1 giorno PER STUDENTE (non per lezione)
+        if (studentData.packageTipo === 'MENSILE' && studentData.giorniRipristinare === 0) {
+          studentData.giorniRipristinare = 1;
+        }
+      });
+    });
+
+    console.log('📊 Studenti da ripristinare:', Array.from(studentiMap.values()));
+
+    const deletedLessonIds = [];
+    const affectedPackageIds = new Set();
+
+    await prisma.$transaction(async (tx) => {
+      // Ripristina ore e giorni
+      for (const [studentId, studentData] of studentiMap) {
+        const pacchetto = await tx.package.findUnique({
+          where: { id: studentData.packageId },
+        });
+
+        if (!pacchetto) continue;
+
+        const nuoveOreResiduo = parseFloat(pacchetto.oreResiduo) + studentData.oreRipristinare;
+        const nuoviGiorniResiduo = pacchetto.giorniResiduo 
+          ? parseInt(pacchetto.giorniResiduo) + studentData.giorniRipristinare
+          : null;
+
+        await tx.package.update({
+          where: { id: studentData.packageId },
+          data: {
+            oreResiduo: parseFloat(nuoveOreResiduo.toFixed(2)),
+            giorniResiduo: nuoviGiorniResiduo,
+          },
+        });
+
+        console.log(`✅ ${studentData.studentName}: +${studentData.oreRipristinare}h, +${studentData.giorniRipristinare} giorni`);
+
+        affectedPackageIds.add(studentData.packageId);
+      }
+
+      // Elimina lezioni
+      for (const lesson of lessons) {
+        await tx.lessonStudent.deleteMany({
+          where: { lessonId: lesson.id },
+        });
+
+        await tx.lesson.delete({
+          where: { id: lesson.id },
+        });
+
+        deletedLessonIds.push(lesson.id);
+      }
+    });
+
+    // Aggiorna stati pacchetti
+    for (const packageId of affectedPackageIds) {
+      await updatePackageStates(prisma, packageId);
+    }
+
+    res.json({
+      message: `${lessons.length} lezioni eliminate`,
+      deletedCount: lessons.length,
+      deletedLessonIds,
+      studentiAggiornati: Array.from(studentiMap.values()),
+    });
+  } catch (error) {
+    console.error('Errore eliminazione bulk:', error);
     next(error);
   }
 };
@@ -511,7 +715,6 @@ const getCalendarDays = async (req, res, next) => {
       return res.status(400).json({ error: 'Parametri obbligatori: anno, mese' });
     }
 
-    // Calcola inizio e fine mese
     const dataInizio = new Date(parseInt(anno), parseInt(mese) - 1, 1);
     const dataFine = new Date(parseInt(anno), parseInt(mese), 0, 23, 59, 59);
 
@@ -524,7 +727,6 @@ const getCalendarDays = async (req, res, next) => {
 
     if (tutorId) where.tutorId = tutorId;
 
-    // ✅ Recupera tutte le lezioni del mese CON dati pacchetto per calcolo entrate
     const lessons = await prisma.lesson.findMany({
       where,
       include: {
@@ -548,6 +750,7 @@ const getCalendarDays = async (req, res, next) => {
             package: {
               select: {
                 id: true,
+                prezzoTotale: true,
                 importoPagato: true,
                 oreAcquistate: true,
               },
@@ -561,7 +764,6 @@ const getCalendarDays = async (req, res, next) => {
       ],
     });
 
-    // Raggruppa per giorno
     const giorniMap = new Map();
 
     lessons.forEach(lesson => {
@@ -581,7 +783,6 @@ const getCalendarDays = async (req, res, next) => {
       giorno.lezioni.push(lesson);
       giorno.numeroLezioni++;
       
-      // Aggiungi studenti unici
       lesson.lessonStudents?.forEach(ls => {
         giorno.studentiUnici.add(ls.student.id);
       });
@@ -589,31 +790,23 @@ const getCalendarDays = async (req, res, next) => {
       giorno.compensoTotale += parseFloat(lesson.compensoTutor || 0);
     });
 
-    // Converti Map in array con calcolo margini
     const giorni = Array.from(giorniMap.values()).map(giorno => {
-      // ✅ Calcola USCITE (compenso tutor)
       const spese = giorno.compensoTotale;
-
-      // ✅ Calcola ENTRATE (ricavo studenti)
       let entrate = 0;
 
-      giorno.lezioni.forEach(lesson => {
-        lesson.lessonStudents?.forEach(ls => {
-          // Calcola prezzo/ora del pacchetto dello studente
+      giorno.lezioni.forEach((lesson) => {
+        lesson.lessonStudents?.forEach((ls) => {
           const pacchetto = ls.package;
           if (!pacchetto) return;
 
-          const importoPagato = parseFloat(pacchetto.importoPagato || 0);
-          const oreAcquistate = parseFloat(pacchetto.oreAcquistate || 1); // Evita divisione per 0
+          const importoPagato = parseFloat(pacchetto.prezzoTotale || 0);
+          const oreAcquistate = parseFloat(pacchetto.oreAcquistate || 1);
           const prezzoOra = importoPagato / oreAcquistate;
 
-          // Ogni studente in ogni lezione genera entrate pari al suo prezzo/ora
-          // (indipendentemente da mezza lezione, perché scalamento è sempre 1h)
           entrate += prezzoOra;
         });
       });
 
-      // ✅ Margine = Entrate - Uscite
       const margine = entrate - spese;
 
       return {
@@ -708,6 +901,7 @@ module.exports = {
   createLesson,
   updateLesson,
   deleteLesson,
+  deleteLessonsByTutorAndDate,
   getCalendarDays,
   getAvailableStudents,
 };

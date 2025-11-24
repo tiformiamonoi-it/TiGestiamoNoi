@@ -81,6 +81,9 @@ model Student {
   // Informazioni scolastiche
   classe String? // Es: "3° Media", "1° Superiore"
   scuola String?
+
+  studentPhone          String?    // Numero alunno
+  studentEmail          String?    // Email alunno (opzionale)
   
   // Informazioni genitore (per fatturazione)
   parentName     String? // Nome genitore/tutore legale
@@ -94,6 +97,8 @@ model Student {
   
   active Boolean @default(true)
   note   String?
+  referral       String?       // aggiungi
+  bisogniSpeciali String?      // aggiungi
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -168,6 +173,7 @@ model Package {
   // Quantità (può essere modificata rispetto al template)
   oreAcquistate    Decimal  @db.Decimal(10, 2) // Ore totali acquistate
   oreResiduo       Decimal  @db.Decimal(10, 2) // Ore rimanenti (può andare in negativo)
+  orePerse         Decimal  @default(0) @db.Decimal(10, 2)
   
   giorniAcquistati Int?     // Solo per pacchetti mensili
   giorniResiduo    Int?     // Giorni rimanenti

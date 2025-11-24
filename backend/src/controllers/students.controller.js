@@ -58,38 +58,41 @@ const getStudents = async (req, res, next) => {
         orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
         include: {
           pacchetti: {
-            where: { stati: { has: 'ATTIVO' } },
-            select: {
-              id: true,
-              nome: true,
-              tipo: true,
-              stati: true,
-              oreAcquistate: true,
-              oreResiduo: true,
-              giorniAcquistati: true,
-              giorniResiduo: true,
-              orarioGiornaliero: true,
-              prezzoTotale: true,
-              importoPagato: true,
-              importoResiduo: true,
-              dataInizio: true,
-              dataScadenza: true,
-              // ✅ CAMBIATO da lezioni a lessonStudents
-              lessonStudents: {
-                select: {
-                  id: true,
-                  lesson: {
-                    select: {
-                      id: true,
-                      data: true,
-                    }
-                  }
+              where: { 
+                stati: { 
+                  hasSome: ['ATTIVO', 'DA_PAGARE', 'IN_SCADENZA', 'ESAURITO', 'SCADUTO']
                 },
               },
+              select: {
+                id: true,
+                nome: true,
+                tipo: true,
+                stati: true,
+                oreAcquistate: true,
+                oreResiduo: true,
+                giorniAcquistati: true,
+                giorniResiduo: true,
+                orarioGiornaliero: true,
+                prezzoTotale: true,
+                importoPagato: true,
+                importoResiduo: true,
+                dataInizio: true,
+                dataScadenza: true,
+                lessonStudents: {
+                  select: {
+                    id: true,
+                    lesson: {
+                      select: {
+                        id: true,
+                        data: true,
+                      }
+                    }
+                  },
+                },
+              },
+              orderBy: { createdAt: 'asc' }, // ✅ PIÙ VECCHIO
+              take: 1,
             },
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-          },
           _count: {
             select: { 
               lessonStudents: true  // ✅ CAMBIATO da lezioni a lessonStudents

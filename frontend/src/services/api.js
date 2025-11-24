@@ -87,21 +87,13 @@ export const packagesAPI = {
 // ========================================
 
 export const standardPackagesAPI = {
-  // Ottieni tutti i pacchetti standard
-  getAll: (params) => api.get('/standard-packages', { params }),
-  
-  // Ottieni singolo pacchetto standard
+  getAll: () => api.get('/standard-packages'),
   getById: (id) => api.get(`/standard-packages/${id}`),
-  
-  // Crea pacchetto standard (solo admin)
   create: (data) => api.post('/standard-packages', data),
-  
-  // Aggiorna pacchetto standard (solo admin)
   update: (id, data) => api.put(`/standard-packages/${id}`, data),
-  
-  // Elimina pacchetto standard (solo admin)
   delete: (id) => api.delete(`/standard-packages/${id}`),
 };
+
 
 
 // ============================================
@@ -112,6 +104,7 @@ export const paymentsAPI = {
   getAll: (params) => api.get('/payments', { params }),
   create: (data) => api.post('/payments', data),
   delete: (id) => api.delete(`/payments/${id}`),
+  
 };
 
 // ============================================
@@ -155,6 +148,8 @@ export const lessonsAPI = {
   
   // Elimina lezione
   delete: (id) => api.delete(`/lessons/${id}`),
+
+  deleteBulkByTutorDate: (tutorId, date) => api.delete(`/lessons/bulk/by-tutor-date?tutorId=${tutorId}&data=${date}`),
 };
 
 // ========================================

@@ -373,20 +373,15 @@ const handleSave = async () => {
     const allSlots = [...mainSlots.value, ...extraSlots.value]
       .filter(slot => slot.studenti.length > 0);
     
-    // Crea una lezione per ogni slot
-    const promises = allSlots.map(slot => {
-      const studentiData = slot.studenti.map(student => {
-        // Trova il pacchetto attivo dello studente
-        const pacchetto = student.pacchetti?.[0]; // Prendi il primo pacchetto attivo
-        
-        return {
-          studentId: student.id,
-          packageId: pacchetto?.id,
-          mezzaLezione: slot.mezzaLezione,
-        };
-      });
+    // ✅ SEQUENZIALE: crea le lezioni una alla volta
+    const results = [];
+    for (const slot of allSlots) {
+      const studentiData = slot.studenti.map(student => ({
+        studentId: student.id,
+        mezzaLezione: slot.mezzaLezione,
+      }));
       
-      return lessonsAPI.create({
+      const result = await lessonsAPI.create({
         tutorId: formData.value.tutorId,
         timeSlotId: slot.id,
         data: formData.value.data,
@@ -394,11 +389,13 @@ const handleSave = async () => {
         forzaGruppo: slot.forzaGruppo,
         note: formData.value.note,
       });
-    });
+      
+      results.push(result);
+      
+      console.log(`✅ Lezione ${results.length}/${allSlots.length} creata per slot ${slot.oraInizio}-${slot.oraFine}`);
+    }
     
-    await Promise.all(promises);
-    
-    alert(`✅ ${allSlots.length} lezioni create con successo!`);
+    alert(`✅ ${results.length} lezioni create con successo!`);
     emit('saved');
     handleClose();
   } catch (error) {
@@ -408,6 +405,8 @@ const handleSave = async () => {
     saving.value = false;
   }
 };
+
+
 
 const handleClose = () => {
   emit('close');

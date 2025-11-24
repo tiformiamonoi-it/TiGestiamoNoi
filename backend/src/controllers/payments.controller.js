@@ -126,20 +126,46 @@ const createPayment = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/payments/:id
+ * Elimina pagamento con validazione
+ */
 const deletePayment = async (req, res, next) => {
   try {
     const { id } = req.params;
 
+    // Trova il pagamento da eliminare
     const payment = await prisma.payment.findUnique({
       where: { id },
-      include: { package: true },
+      include: { 
+        package: {
+          include: {
+            pagamenti: { orderBy: { dataPagamento: 'asc' } }
+          }
+        }
+      },
     });
 
     if (!payment) {
       return res.status(404).json({ error: 'Pagamento non trovato' });
     }
 
+    // ⚠️ VALIDAZIONE: NON eliminare ACCONTO se esiste un SALDO
+    if (payment.tipoPagamento === 'ACCONTO') {
+      const hasSaldo = payment.package.pagamenti.some(
+        p => p.id !== id && p.tipoPagamento === 'SALDO'
+      );
+      
+      if (hasSaldo) {
+        return res.status(400).json({ 
+          error: 'Impossibile eliminare un acconto se esiste un saldo. Elimina prima il saldo.' 
+        });
+      }
+    }
+
+    // Transazione atomica
     await prisma.$transaction(async (tx) => {
+      // 1. Aggiorna importi pacchetto
       await tx.package.update({
         where: { id: payment.packageId },
         data: {
@@ -148,17 +174,27 @@ const deletePayment = async (req, res, next) => {
         },
       });
 
+      // 2. Elimina movimento contabile associato
       await tx.accountingEntry.deleteMany({
         where: { paymentId: id },
       });
 
+      // 3. Elimina il pagamento
       await tx.payment.delete({
         where: { id },
       });
     });
 
-    res.json({ message: 'Pagamento eliminato con successo' });
+    // 4. Ricalcola stati del pacchetto
+    await updatePackageStates(prisma, payment.packageId);
+
+    res.json({ 
+      message: 'Pagamento eliminato con successo',
+      deletedPaymentId: id,
+      importoRipristinato: parseFloat(payment.importo),
+    });
   } catch (error) {
+    console.error('Errore eliminazione pagamento:', error);
     next(error);
   }
 };

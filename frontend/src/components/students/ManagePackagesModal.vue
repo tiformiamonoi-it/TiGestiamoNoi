@@ -136,6 +136,29 @@
                   </div>
                 </div>
 
+                <div v-if="pkg.tipo === 'MENSILE' && pkg.stati?.includes('ATTIVO') && getPackageLostHours(pkg) > 0" class="package-hours-detail">
+  
+                <!-- Ore Perse -->
+                <div class="hours-detail-item lost">
+                  <span class="icon">⚠️</span>
+                  <div class="detail-content">
+                    <span class="label">Ore perse:</span>
+                    <span class="value">{{ getPackageLostHours(pkg).toFixed(1) }}h</span>
+                  </div>
+                  <span class="info-tooltip" title="Ore teoriche non utilizzate dei giorni consumati">ℹ️</span>
+                </div>
+                
+                <!-- Ore Effettive Rimanenti -->
+                <div class="hours-detail-item effective">
+                  <span class="icon">✅</span>
+                  <div class="detail-content">
+                    <span class="label">Ore effettive rimanenti:</span>
+                    <span class="value">{{ getEffectiveRemainingHours(pkg).toFixed(1) }}h</span>
+                  </div>
+                  <span class="formula">({{ parseFloat(pkg.oreResiduo || 0).toFixed(1) }}h - {{ getPackageLostHours(pkg).toFixed(1) }}h)</span>
+                </div>
+              </div>
+
                 <!-- Dettagli Economici -->
                 <div class="package-details">
                   <!-- Costo Pacchetto -->
@@ -149,12 +172,26 @@
                     <span class="label">Pagamenti:</span>
                     <div class="payments-container">
                       <div v-if="pkg.pagamenti && pkg.pagamenti.length > 0" class="payments-list">
-                        <div v-for="(pag) in pkg.pagamenti" :key="pag.id" class="payment-item">
-                          <span class="payment-label">{{ getPaymentTypeLabel(pag.tipoPagamento) }}</span>
-                          <span class="payment-amount">€{{ formatCurrency(pag.importo) }}</span>
-                          <span class="payment-method">({{ getPaymentMethodLabel(pag.metodoPagamento) }})</span>
-                          <span v-if="pag.richiedeFattura" class="invoice-icon" title="Richiede fattura">📄</span>
-                        </div>
+                       <div v-for="pag in pkg.pagamenti" :key="pag.id" class="payment-item">
+                            <span class="payment-label">{{ getPaymentTypeLabel(pag.tipoPagamento) }}</span>
+                            <span class="payment-amount">{{ formatCurrency(pag.importo) }}</span>
+                            <span class="payment-method">{{ getPaymentMethodLabel(pag.metodoPagamento) }}</span>
+                            <span v-if="pag.richiedeFattura" class="invoice-icon" title="Richiede fattura">📄</span>
+                            
+                            <!-- ✅ NUOVO: Pulsante Elimina -->
+                            <button 
+                              @click.stop="confirmDeletePayment(pag.id)" 
+                              class="btn-delete-payment" 
+                              title="Elimina pagamento"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                <line x1="10" y1="11" x2="10" y2="17"/>
+                                <line x1="14" y1="11" x2="14" y2="17"/>
+                              </svg>
+                            </button>
+                          </div>
+
                         <div class="payment-total">
                           = <strong>Pagato: €{{ formatCurrency(pkg.importoPagato) }}</strong>
                         </div>
@@ -363,89 +400,137 @@
           <div v-if="activeTab === 'rinnovo'" class="tab-content">
             <form @submit.prevent="submitRenewal" class="renewal-form">
               <div class="form-group">
-                <label class="form-label">Pacchetto da Rinnovare *</label>
-                <select v-model="renewalForm.packageId" @change="onPackageSelect" class="form-control" required>
-                  <option value="">Seleziona pacchetto</option>
-                  <option
-                    v-for="pkg in activePackages"
-                    :key="pkg.id"
-                    :value="pkg.id"
-                  >
-                    {{ pkg.nome }} - {{ pkg.tipo }}
-                  </option>
-                </select>
-              </div>
+  <label class="form-label">📦 Pacchetto Standard *</label>
+  <select v-model="renewalForm.standardPackageId" @change="onStandardPackageChangeRenewal" class="form-control" required>
+    <option value="">Seleziona pacchetto standard...</option>
+    <option
+      v-for="stdPkg in standardPackages"
+      :key="stdPkg.id"
+      :value="stdPkg.id"
+    >
+      {{ stdPkg.nome }} - {{ stdPkg.categoria }} ({{ stdPkg.tipo }}) - €{{ parseFloat(stdPkg.prezzoStandard).toFixed(2) }}
+    </option>
+  </select>
+</div>
 
-              <div class="form-group">
-                <label class="form-label">Nuovo Nome Pacchetto *</label>
-                <input
-                  v-model="renewalForm.nome"
-                  type="text"
-                  class="form-control"
-                  placeholder="Es: Pacchetto Novembre 2024"
-                  required
-                />
-              </div>
+<div v-if="renewalForm.standardPackageId">
+  <div class="form-group">
+    <label class="form-label">Nome Pacchetto *</label>
+    <input
+      v-model="renewalForm.nome"
+      type="text"
+      class="form-control"
+      readonly
+      required
+    />
+  </div>
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">
-                    {{ renewalForm.tipo === 'MENSILE' ? 'Giorni Acquistati' : 'Ore Acquistate' }} *
-                  </label>
-                  <input
-                    v-model.number="renewalForm.quantita"
-                    type="number"
-                    step="0.5"
-                    min="1"
-                    class="form-control"
-                    required
-                  />
-                </div>
+  <div class="form-row">
+    <div v-if="renewalForm.tipo === 'MENSILE'" class="form-group">
+      <label class="form-label">Giorni Acquistati *</label>
+      <input
+        v-model.number="renewalForm.giorniAcquistati"
+        type="number"
+        step="1"
+        min="1"
+        class="form-control"
+        @input="updateTotalHours"
+        required
+      />
+    </div>
 
-                <div class="form-group">
-                  <label class="form-label">Importo Totale *</label>
-                  <input
-                    v-model.number="renewalForm.importoTotale"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    class="form-control"
-                    required
-                  />
-                </div>
-              </div>
+    <div class="form-group">
+      <label class="form-label">
+        {{ renewalForm.tipo === 'MENSILE' ? 'Ore Totali *' : 'Ore Acquistate *' }}
+      </label>
+      <input
+        v-model.number="renewalForm.oreAcquistate"
+        type="number"
+        step="0.5"
+        min="1"
+        class="form-control"
+        :readonly="renewalForm.tipo === 'MENSILE'"
+        required
+      />
+    </div>
+  </div>
 
-              <div class="form-group">
-                <label class="form-label">Data Inizio *</label>
-                <input
-                  v-model="renewalForm.dataInizio"
-                  type="date"
-                  class="form-control"
-                  required
-                />
-              </div>
+  <div v-if="renewalForm.tipo === 'MENSILE'" class="form-group">
+    <label class="form-label">Ore per Giorno *</label>
+    <input
+      v-model.number="renewalForm.orarioGiornaliero"
+      type="number"
+      step="0.5"
+      min="0.5"
+      class="form-control"
+      @input="updateTotalHours"
+      required
+    />
+  </div>
 
-              <div class="form-group">
-                <label class="checkbox-label">
-                  <input
-                    v-model="renewalForm.trasferisciResiduo"
-                    type="checkbox"
-                  />
-                  <span>Trasferisci ore/giorni residui dal vecchio pacchetto</span>
-                </label>
-              </div>
+  <div class="form-group">
+    <label class="form-label">Importo Totale *</label>
+    <input
+      v-model.number="renewalForm.prezzoTotale"
+      type="number"
+      step="0.01"
+      min="0.01"
+      class="form-control"
+      required
+    />
+  </div>
 
-              <div class="form-actions">
-                <button type="button" @click="$emit('close')" class="btn-secondary">
-                  Annulla
-                </button>
-                <button type="submit" class="btn-primary" :disabled="submitting">
-                  <span v-if="submitting">Creazione...</span>
-                  <span v-else>🔄 Rinnova Pacchetto</span>
-                </button>
-              </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Data Inizio *</label>
+      <input
+        v-model="renewalForm.dataInizio"
+        type="date"
+        class="form-control"
+        required
+      />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Data Scadenza</label>
+      <input
+        v-model="renewalForm.dataScadenza"
+        type="date"
+        class="form-control"
+      />
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Note</label>
+    <textarea
+      v-model="renewalForm.note"
+      class="form-control"
+      rows="3"
+    ></textarea>
+  </div>
+
+  <div class="form-actions">
+    <button type="button" @click="resetRenewalForm" class="btn-secondary">
+      Annulla
+    </button>
+    <button type="submit" class="btn-primary" :disabled="submittingRenewal">
+      <span v-if="submittingRenewal">Creazione...</span>
+      <span v-else>💾 Crea Nuovo Pacchetto</span>
+    </button>
+  </div>
+</div>
+
+<div v-else class="empty-state">
+  <p>👆 Seleziona un pacchetto standard per iniziare</p>
+</div>
+
             </form>
           </div>
+
+
+
+
         </div>
       </div>
     </div>
@@ -462,7 +547,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { packagesAPI, paymentsAPI } from '@/services/api';
+import { packagesAPI, paymentsAPI, standardPackagesAPI } from '@/services/api';
 import EditPackageModal from './EditPackageModal.vue';
 
 const props = defineProps({
@@ -482,9 +567,10 @@ const activeTab = ref('storico');
 const packages = ref([]);
 const loadingPackages = ref(false);
 const submitting = ref(false);
+const submittingRenewal = ref(false);
 const showEditModal = ref(false);
 const packageToEdit = ref(null);
-
+const standardPackages = ref([]);
 // Form Pagamento
 const paymentForm = ref({
   packageId: '',
@@ -499,22 +585,22 @@ const paymentForm = ref({
 
 // Form Rinnovo
 const renewalForm = ref({
-  packageId: '',
+  standardPackageId: '',
   nome: '',
   tipo: 'MENSILE',
-  quantita: 0,
-  importoTotale: 0,
+  giorniAcquistati: 0,        // ✅ NON quantita
+  oreAcquistate: 0,           // ✅ NON quantita
+  orarioGiornaliero: 3,
+  prezzoTotale: 0,
   dataInizio: new Date().toISOString().split('T')[0],
-  trasferisciResiduo: true,
+  dataScadenza: '',
+  note: '',
 });
 
 // ========================================
 // COMPUTED
 // ========================================
 
-const activePackages = computed(() => {
-  return packages.value.filter(pkg => pkg.stati?.includes('ATTIVO'));
-});
 
 const unpaidPackages = computed(() => {
   return packages.value.filter(pkg => parseFloat(pkg.importoResiduo || 0) > 0);
@@ -551,27 +637,78 @@ const usedHours = computed(() => {
  */
 const lostHours = computed(() => {
   return packages.value.reduce((sum, pkg) => {
-    // Solo per pacchetti non attivi
-    if (pkg.stati?.includes('ATTIVO')) return sum;
-    
-    if (pkg.tipo === 'MENSILE') {
-      const giorniAcquistati = parseFloat(pkg.giorniAcquistati || 0);
-      const giorniResiduo = parseFloat(pkg.giorniResiduo || 0);
-      const giorniUsati = giorniAcquistati - giorniResiduo;
-      const orarioGiornaliero = parseFloat(pkg.orarioGiornaliero || 3); // Default 3h
-      
-      const oreTeoricheDisponibili = giorniUsati * orarioGiornaliero;
-      const oreEffettiveUsate = parseFloat(pkg.oreAcquistate || 0) - parseFloat(pkg.oreResiduo || 0);
-      const orePerse = oreTeoricheDisponibili - oreEffettiveUsate;
-      
-      return sum + Math.max(0, orePerse);
-    } else {
-      // Per pacchetti ORE: ore rimaste non utilizzate
-      const oreResidue = parseFloat(pkg.oreResiduo || 0);
-      return sum + Math.max(0, oreResidue);
-    }
+    // ✅ Usa il campo orePerse dal database (già calcolato e salvato)
+    return sum + parseFloat(pkg.orePerse || 0);
   }, 0);
 });
+
+
+
+/**
+ * Calcola ore perse dinamicamente per un singolo pacchetto
+ * - Per pacchetti ATTIVI: calcolo dinamico in tempo reale
+ * - Per pacchetti SCADUTI: usa il valore salvato nel database
+ */
+/**
+ * Calcola ore perse dinamicamente per un singolo pacchetto
+ * ORE PERSE = Ore teoriche che dovevano essere usate - Ore effettivamente usate
+ */
+const getPackageLostHours = (pkg) => {
+  const isScaduto = pkg.stati?.includes('SCADUTO');
+  const isEsaurito = pkg.stati?.includes('ESAURITO');
+  
+  // ✅ Se SCADUTO o ESAURITO: usa valore dal database
+  if (isScaduto || isEsaurito) {
+    return parseFloat(pkg.orePerse || 0);
+  }
+  
+  // ✅ CALCOLO DINAMICO per pacchetti MENSILI ATTIVI
+  if (pkg.tipo === 'MENSILE') {
+    const giorniAcquistati = parseFloat(pkg.giorniAcquistati || 0);
+    const giorniResidui = parseFloat(pkg.giorniResiduo || 0);
+    const giorniUsati = giorniAcquistati - giorniResidui;
+    
+    const oreAcquistate = parseFloat(pkg.oreAcquistate || 0);
+    const oreResiduo = parseFloat(pkg.oreResiduo || 0);
+    const oreUsate = oreAcquistate - oreResiduo;
+    
+    const orarioGiornaliero = parseFloat(pkg.orarioGiornaliero || 3);
+    
+    // ✅ DEBUG: Stampa i valori
+    console.log('🔍 DEBUG Pacchetto:', pkg.nome);
+    console.log('  giorniAcquistati:', giorniAcquistati);
+    console.log('  giorniResidui:', giorniResidui);
+    console.log('  giorniUsati:', giorniUsati);
+    console.log('  oreAcquistate:', oreAcquistate);
+    console.log('  oreResiduo:', oreResiduo);
+    console.log('  oreUsate:', oreUsate);
+    console.log('  orarioGiornaliero:', orarioGiornaliero);
+    
+    // ✅ FORMULA: (giorniUsati × orarioGiornaliero) - oreUsate
+    const oreTeoriche = giorniUsati * orarioGiornaliero;
+    const orePerse = oreTeoriche - oreUsate;
+    
+    console.log('  oreTeoriche:', oreTeoriche);
+    console.log('  orePerse:', orePerse);
+    console.log('---');
+    
+    return Math.max(0, orePerse);
+  } else {
+    return 0;
+  }
+};
+
+
+/**
+ * Calcola ore effettive rimanenti (ore residue - ore perse)
+ */
+const getEffectiveRemainingHours = (pkg) => {
+  const oreResiduo = parseFloat(pkg.oreResiduo || 0);
+  const orePerse = getPackageLostHours(pkg);
+  return Math.max(0, oreResiduo - orePerse);
+};
+
+
 
 // ========================================
 // HELPER FUNCTIONS
@@ -744,22 +881,89 @@ const loadPackages = async () => {
   }
 };
 
+const loadStandardPackages = async () => {
+  try {
+    const response = await standardPackagesAPI.getAll({ active: true });
+    standardPackages.value = response.data.packages || response.data || [];
+    console.log('✅ Pacchetti standard caricati:', standardPackages.value.length);
+  } catch (error) {
+    console.error('❌ Errore caricamento pacchetti standard:', error);
+  }
+};
+
 const selectPackageForPayment = (pkg) => {
   paymentForm.value.packageId = pkg.id;
   paymentForm.value.importo = parseFloat(pkg.importoResiduo) || 0;
   activeTab.value = 'pagamento';
 };
 
-const onPackageSelect = () => {
-  const selectedPkg = packages.value.find(p => p.id === renewalForm.value.packageId);
-  if (selectedPkg) {
-    renewalForm.value.tipo = selectedPkg.tipo;
-    renewalForm.value.quantita = selectedPkg.tipo === 'MENSILE' 
-      ? (parseFloat(selectedPkg.giorniAcquistati) || 0)
-      : (parseFloat(selectedPkg.oreAcquistate) || 0);
-    renewalForm.value.importoTotale = parseFloat(selectedPkg.prezzoTotale) || 0;
+/**
+ * Elimina pagamento con conferma
+ */
+
+const confirmDeletePayment = async (paymentId) => {
+  if (!confirm('Sei sicuro di voler eliminare questo pagamento? L\'importo verrà ripristinato come residuo del pacchetto.')) {
+    return;
+  }
+
+  try {
+    await paymentsAPI.delete(paymentId);
+    alert('Pagamento eliminato con successo!');
+    await loadPackages(); // Ricarica pacchetti
+  } catch (error) {
+    console.error('Errore eliminazione pagamento:', error);
+    
+    // Mostra errore specifico se è un acconto con saldo
+    if (error.response?.status === 400) {
+      alert(error.response.data.error || 'Errore durante l\'eliminazione del pagamento');
+    } else {
+      alert('Errore durante l\'eliminazione del pagamento');
+    }
   }
 };
+
+
+
+const selectPackageForRenewal = (pkg) => {
+  // Passa al tab rinnovo
+  activeTab.value = 'rinnovo';
+  
+  // Precompila il form rinnovo con i dati del pacchetto standard associato
+  if (pkg.standardPackage) {
+    renewalForm.value.standardPackageId = pkg.standardPackage.id;
+    
+    // Aspetta che il DOM si aggiorni, poi seleziona il pacchetto standard
+    setTimeout(() => {
+      // Il cambio di standardPackageId attiverà automaticamente
+      // la funzione onStandardPackageChange che compilerà il resto
+      console.log('📋 Precompilato rinnovo con:', pkg.standardPackage.nome);
+    }, 100);
+  } else {
+    // Se non ha un pacchetto standard associato, usa i dati manuali
+    renewalForm.value.tipo = pkg.tipo;
+    renewalForm.value.oreAcquistate = parseFloat(pkg.oreAcquistate || 0);
+    renewalForm.value.giorniAcquistati = pkg.tipo === 'MENSILE' ? parseFloat(pkg.giorniAcquistati || 0) : null;
+    renewalForm.value.orarioGiornaliero = pkg.tipo === 'MENSILE' ? parseFloat(pkg.orarioGiornaliero || 3) : null;
+    renewalForm.value.prezzoTotale = parseFloat(pkg.prezzoTotale || 0);
+  }
+  
+  // Data inizio: oggi
+  const oggi = new Date();
+  renewalForm.value.dataInizio = oggi.toISOString().split('T')[0];
+  
+  // Data scadenza: calcola in base al tipo
+  if (pkg.tipo === 'MENSILE' && pkg.standardPackage?.durataGiorni) {
+    const scadenza = new Date(oggi);
+    scadenza.setDate(scadenza.getDate() + pkg.standardPackage.durataGiorni);
+    renewalForm.value.dataScadenza = scadenza.toISOString().split('T')[0];
+  } else {
+    renewalForm.value.dataScadenza = '';
+  }
+  
+  console.log('🔄 Rinnovo pacchetto:', pkg.nome);
+  console.log('📋 Form precompilato:', renewalForm.value);
+};
+
 
 const submitPayment = async () => {
   submitting.value = true;
@@ -786,31 +990,44 @@ const submitPayment = async () => {
   }
 };
 
+/**
+ * Submit rinnovo/creazione pacchetto
+ */
 const submitRenewal = async () => {
-  submitting.value = true;
+  submittingRenewal.value = true;
   try {
-    await packagesAPI.create({
+    // ✅ Payload corretto con i campi del backend
+    const payload = {
       studentId: props.student.id,
+      standardPackageId: renewalForm.value.standardPackageId || null,
       nome: renewalForm.value.nome,
       tipo: renewalForm.value.tipo,
-      ...(renewalForm.value.tipo === 'MENSILE' 
-        ? { giorniAcquistati: renewalForm.value.quantita }
-        : { oreAcquistate: renewalForm.value.quantita }
-      ),
-      prezzoTotale: renewalForm.value.importoTotale,
+      oreAcquistate: parseFloat(renewalForm.value.oreAcquistate),
+      giorniAcquistati: renewalForm.value.tipo === 'MENSILE' 
+        ? parseInt(renewalForm.value.giorniAcquistati) 
+        : null,
+      orarioGiornaliero: renewalForm.value.tipo === 'MENSILE' 
+        ? parseFloat(renewalForm.value.orarioGiornaliero) 
+        : null,
+      prezzoTotale: parseFloat(renewalForm.value.prezzoTotale),
       dataInizio: renewalForm.value.dataInizio,
-      trasferisciResiduo: renewalForm.value.trasferisciResiduo,
-      packageIdPrecedente: renewalForm.value.packageId,
-    });
+      dataScadenza: renewalForm.value.dataScadenza || null,
+      note: renewalForm.value.note || null,
+    };
 
-    alert('Pacchetto rinnovato con successo!');
-    emit('refresh');
-    emit('close');
+    console.log('📤 Invio payload rinnovo:', payload);
+
+    await packagesAPI.create(payload);
+    
+    alert('Nuovo pacchetto creato con successo!');
+    await loadPackages();
+    activeTab.value = 'storico';
+    resetRenewalForm();
   } catch (error) {
-    console.error('Errore rinnovo pacchetto:', error);
-    alert('Errore durante il rinnovo del pacchetto');
+    console.error('Errore creazione pacchetto:', error);
+    alert('Errore durante la creazione del pacchetto');
   } finally {
-    submitting.value = false;
+    submittingRenewal.value = false;
   }
 };
 
@@ -890,6 +1107,14 @@ const confirmDelete = async (pkg) => {
   }
 };
 
+const updateTotalHours = () => {
+  if (renewalForm.value.tipo === 'MENSILE') {
+    const giorni = parseFloat(renewalForm.value.giorniAcquistati || 0);
+    const oreGiorno = parseFloat(renewalForm.value.orarioGiornaliero || 3);
+    renewalForm.value.oreAcquistate = giorni * oreGiorno;
+  }
+};
+
 const onPackageUpdated = () => {
   showEditModal.value = false;
   packageToEdit.value = null;
@@ -897,8 +1122,61 @@ const onPackageUpdated = () => {
   emit('refresh');
 };
 
-onMounted(() => {
-  loadPackages();
+const resetRenewalForm = () => {
+  renewalForm.value = {
+    standardPackageId: '',
+    nome: '',
+    tipo: 'MENSILE',
+    giorniAcquistati: 0,
+    oreAcquistate: 0,
+    orarioGiornaliero: 3,
+    prezzoTotale: 0,
+    dataInizio: new Date().toISOString().split('T')[0],
+    dataScadenza: '',
+    note: '',
+  };
+};
+
+
+const onStandardPackageChangeRenewal = () => {
+  const selectedPackage = standardPackages.value.find(
+    pkg => pkg.id === renewalForm.value.standardPackageId
+  );
+  
+  if (selectedPackage) {
+    // Precompila i campi dal pacchetto standard
+    renewalForm.value.nome = selectedPackage.nome;
+    renewalForm.value.tipo = selectedPackage.tipo;
+    renewalForm.value.prezzoTotale = parseFloat(selectedPackage.prezzoStandard);
+    
+    if (selectedPackage.tipo === 'MENSILE') {
+      renewalForm.value.giorniAcquistati = parseInt(selectedPackage.giorniInclusi || 20);
+      renewalForm.value.orarioGiornaliero = parseFloat(selectedPackage.orarioGiornaliero || 3);
+      
+      // ✅ USA oreIncluse dal database (non calcolare!)
+      renewalForm.value.oreAcquistate = parseFloat(selectedPackage.oreIncluse || 0);
+      
+      // Calcola data scadenza
+      const oggi = new Date();
+      const scadenza = new Date(oggi);
+      scadenza.setDate(scadenza.getDate() + renewalForm.value.giorniAcquistati);
+      renewalForm.value.dataScadenza = scadenza.toISOString().split('T')[0];
+    } else {
+      renewalForm.value.oreAcquistate = parseFloat(selectedPackage.oreIncluse || 0);
+      renewalForm.value.giorniAcquistati = null;
+      renewalForm.value.orarioGiornaliero = null;
+      renewalForm.value.dataScadenza = '';
+    }
+    
+    console.log('✅ Pacchetto standard selezionato:', selectedPackage.nome);
+  }
+};
+
+onMounted(async () => {
+  await Promise.all([
+    loadPackages(),
+    loadStandardPackages()
+  ]);
 });
 </script>
 
@@ -1671,4 +1949,181 @@ onMounted(() => {
 .btn-icon:disabled:hover {
   background: transparent;
 }
+
+/* ========================================
+   ALERT ORE PERSE - Per Singolo Pacchetto
+======================================== */
+
+.package-lost-hours-alert {
+  margin-top: 12px;
+}
+
+.alert-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border-left: 4px solid;
+  font-size: 14px;
+}
+
+/* Pacchetto ATTIVO: Arancione (warning) */
+.alert-content.is-active {
+  background: #fef3c7;
+  border-left-color: #f59e0b;
+}
+
+/* Pacchetto SCADUTO: Rosso (error) */
+.alert-content.is-expired {
+  background: #fee2e2;
+  border-left-color: #dc2626;
+}
+
+.alert-icon {
+  font-size: 20px;
+}
+
+.alert-text {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.alert-label {
+  color: #78350f;
+  font-weight: 500;
+}
+
+.alert-content.is-expired .alert-label {
+  color: #991b1b;
+}
+
+.alert-value {
+  color: #92400e;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.alert-content.is-expired .alert-value {
+  color: #b91c1c;
+}
+
+.alert-badge {
+  padding: 4px 8px;
+  background: #fbbf24;
+  color: #78350f;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ========================================
+   ORE PERSE + ORE EFFETTIVE - Compatto
+======================================== */
+
+.package-hours-detail {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #fef3c7;
+  border-left: 4px solid #f59e0b;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.hours-detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hours-detail-item .icon {
+  font-size: 16px;
+}
+
+.detail-content {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.detail-content .label {
+  color: #78350f;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.detail-content .value {
+  color: #92400e;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.hours-detail-item.effective .detail-content .value {
+  color: #065f46;
+}
+
+.formula {
+  color: #92400e;
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.info-tooltip {
+  cursor: help;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.info-tooltip:hover {
+  opacity: 1;
+}
+
+/* Pulsante elimina pagamento */
+.btn-delete-payment {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #dc2626;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  padding: 4px;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-delete-payment:hover {
+  opacity: 1;
+}
+
+.btn-delete-payment svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Migliora layout payment-item per contenere il pulsante */
+.payment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.payment-item:last-child {
+  border-bottom: none;
+}
+
+
 </style>
