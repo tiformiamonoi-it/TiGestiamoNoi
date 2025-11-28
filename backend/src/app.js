@@ -13,7 +13,7 @@ const packagesRoutes = require('./routes/packages.routes');
 const paymentsRoutes = require('./routes/payments.routes');
 const configRoutes = require('./routes/config.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
-const lessonRoutes = require('./routes/lessons.routes'); 
+const lessonRoutes = require('./routes/lessons.routes');
 const timeslotsRoutes = require('./routes/timeslots.routes');
 const tutorsRoutes = require('./routes/tutors.routes');
 
@@ -22,12 +22,32 @@ const app = express();
 // ============================================
 // MIDDLEWARE GLOBALI
 // ============================================
-
+/*
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
 }));
+*/
 
+// ✅ CORS aggiornato per Development + Production
+const allowedOrigins = [
+  'http://localhost:5173',  // Dev locale frontend
+  'https://ti-gestiamo-noi-frontend.vercel.app',  // Production Vercel
+  process.env.FRONTEND_URL  // Dinamico da environment variable
+].filter(Boolean);  // Rimuove eventuali undefined
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permette richieste senza origin (Postman, test) o dalla lista allowedOrigins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error(`❌ CORS blocked origin: ${origin}`);
+      callback(new Error('Non autorizzato da CORS'));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
