@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "start": "node src/server.js",
+    "dev": "npx dotenv-cli -e .env -- nodemon src/server.js",
+    "postinstall": "prisma generate",
     "migrate": "npx dotenv-cli -e .env -- npx prisma migrate dev",
     "migrate:reset": "npx dotenv-cli -e .env -- npx prisma migrate reset",
     "db:push": "npx dotenv-cli -e .env -- npx prisma db push",
     "db:seed": "npx prisma db seed",
     "prisma:generate": "npx dotenv-cli -e .env -- npx prisma generate",
-    "prisma:studio": "npx dotenv-cli -e .env -- npx prisma studio",
-    "dev": "npx dotenv-cli -e .env -- nodemon src/server.js"
+    "prisma:studio": "npx dotenv-cli -e .env -- npx prisma studio"
   },
   "keywords": [],
   "author": "",
