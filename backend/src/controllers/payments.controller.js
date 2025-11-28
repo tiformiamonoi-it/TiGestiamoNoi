@@ -108,8 +108,8 @@ const createPayment = async (req, res, next) => {
     });
 
     // ✅ NUOVO: Aggiorna stati dopo pagamento
-    await updatePackageStates(prisma, packageId);
-    
+    await updatePackageStates(packageId);
+
     // Recupera pacchetto con stati aggiornati
     const finalPackage = await prisma.package.findUnique({
       where: { id: packageId },
@@ -137,7 +137,7 @@ const deletePayment = async (req, res, next) => {
     // Trova il pagamento da eliminare
     const payment = await prisma.payment.findUnique({
       where: { id },
-      include: { 
+      include: {
         package: {
           include: {
             pagamenti: { orderBy: { dataPagamento: 'asc' } }
@@ -155,10 +155,10 @@ const deletePayment = async (req, res, next) => {
       const hasSaldo = payment.package.pagamenti.some(
         p => p.id !== id && p.tipoPagamento === 'SALDO'
       );
-      
+
       if (hasSaldo) {
-        return res.status(400).json({ 
-          error: 'Impossibile eliminare un acconto se esiste un saldo. Elimina prima il saldo.' 
+        return res.status(400).json({
+          error: 'Impossibile eliminare un acconto se esiste un saldo. Elimina prima il saldo.'
         });
       }
     }
@@ -186,9 +186,9 @@ const deletePayment = async (req, res, next) => {
     });
 
     // 4. Ricalcola stati del pacchetto
-    await updatePackageStates(prisma, payment.packageId);
+    await updatePackageStates(payment.packageId);
 
-    res.json({ 
+    res.json({
       message: 'Pagamento eliminato con successo',
       deletedPaymentId: id,
       importoRipristinato: parseFloat(payment.importo),

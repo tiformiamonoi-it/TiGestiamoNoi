@@ -135,26 +135,40 @@
             </div>
 
             <!-- Date -->
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Data Inizio *</label>
-                <input
-                  v-model="form.dataInizio"
-                  type="date"
-                  class="form-control"
-                  required
-                />
-              </div>
+            <!-- Date -->
+<div class="form-row">
+  <div class="form-group">
+    <label class="form-label">Data Inizio *</label>
+    <input
+      v-model="form.dataInizio"
+      type="date"
+      class="form-control"
+      required
+    />
+  </div>
 
-              <div class="form-group">
-                <label class="form-label">Data Scadenza</label>
-                <input
-                  v-model="form.dataScadenza"
-                  type="date"
-                  class="form-control"
-                />
-              </div>
-            </div>
+  <!-- ✅ AGGIORNATO: Data Scadenza Modificabile -->
+  <div class="form-group">
+    <label class="form-label">Data Scadenza</label>
+    <input
+      v-model="form.dataScadenza"
+      type="date"
+      class="form-control"
+    />
+    <small class="form-hint">
+      Puoi modificare manualmente la data di scadenza
+    </small>
+  </div>
+</div>
+
+<!-- ✅ NUOVO: Alert se pacchetto chiuso -->
+<div v-if="isPacchettoClosed" class="alert alert-danger">
+  <strong>🔒 Pacchetto Chiuso</strong>
+  <p>Questo pacchetto è completamente pagato e senza ore disponibili. Non può essere modificato.</p>
+</div>
+
+
+
 
             <!-- Note -->
             <div class="form-group">
@@ -196,7 +210,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { packagesAPI, standardPackagesAPI } from '@/services/api';
 
 // ========================================
@@ -224,11 +238,51 @@ const form = ref({
   standardPackageId: '',
   giorniAcquistati: 0,
   oreAcquistate: 0,
-  orarioGiornaliero: 3, // Default 3h/giorno
+  orarioGiornaliero: 3,
+  prezzoTotale: 0,
   prezzoTotale: 0,
   dataInizio: '',
-  dataScadenza: '',
+  dataScadenza: '', // ✅ NUOVO
   note: '',
+});
+
+// ========================================
+// COMPUTED
+// ========================================
+
+// ✅ NUOVO: Calcola data scadenza automatica
+const dataScadenzaCalcolata = computed(() => {
+  if (!form.value.dataInizio || !selectedStandardPackage.value) {
+    return props.packageData.dataScadenza 
+      ? new Date(props.packageData.dataScadenza).toISOString().split('T')[0]
+      : '';
+  }
+
+  const dataInizio = new Date(form.value.dataInizio);
+  const tipo = selectedStandardPackage.value.tipo;
+  
+  if (tipo === 'ORE') {
+    // Fine anno scolastico: 15 giugno
+    const meseInizio = dataInizio.getMonth();
+    const annoScadenza = meseInizio >= 8 
+      ? dataInizio.getFullYear() + 1 
+      : dataInizio.getFullYear();
+    
+    return new Date(annoScadenza, 5, 15).toISOString().split('T')[0];
+  }
+  
+  // ✅ MENSILE: dataInizio + 30 giorni
+  const scadenza = new Date(dataInizio);
+  scadenza.setDate(scadenza.getDate() + 30);
+  return scadenza.toISOString().split('T')[0];
+});
+
+
+// ✅ NUOVO: Verifica se pacchetto è chiuso
+const isPacchettoClosed = computed(() => {
+  const isPagato = parseFloat(props.packageData.importoResiduo || 0) === 0;
+  const hasNoOre = parseFloat(props.packageData.oreResiduo || 0) <= 0;
+  return isPagato && hasNoOre;
 });
 
 // ========================================
@@ -243,26 +297,16 @@ const getTypeLabel = (tipo) => {
 // FUNCTIONS
 // ========================================
 
-/**
- * Carica i pacchetti standard disponibili dal backend
- */
 const loadStandardPackages = async () => {
   try {
     const response = await standardPackagesAPI.getAll({ active: true });
     standardPackages.value = response.data.packages || response.data || [];
   } catch (error) {
     console.error('Errore caricamento pacchetti standard:', error);
-    if (error.response?.status === 401) {
-      alert('Sessione scaduta. Effettua nuovamente il login.');
-      return;
-    }
     alert('Impossibile caricare i pacchetti standard.');
   }
 };
 
-/**
- * ✅ AGGIORNATA: Gestisce cambio pacchetto standard
- */
 const onStandardPackageChange = () => {
   const stdPkg = standardPackages.value.find(p => p.id === form.value.standardPackageId);
   if (!stdPkg) return;
@@ -284,9 +328,6 @@ const onStandardPackageChange = () => {
   form.value.prezzoTotale = parseFloat(stdPkg.prezzoStandard) || 0;
 };
 
-/**
- * ✅ NUOVA: Ricalcola ore quando cambiano i giorni (solo MENSILE)
- */
 const onGiorniChange = () => {
   const tipo = selectedStandardPackage.value?.tipo || props.packageData.tipo;
   if (tipo === 'MENSILE') {
@@ -294,9 +335,6 @@ const onGiorniChange = () => {
   }
 };
 
-/**
- * ✅ NUOVA: Ricalcola ore quando cambia orario giornaliero (solo MENSILE)
- */
 const onOrarioGiornalieroChange = () => {
   const tipo = selectedStandardPackage.value?.tipo || props.packageData.tipo;
   if (tipo === 'MENSILE') {
@@ -304,19 +342,6 @@ const onOrarioGiornalieroChange = () => {
   }
 };
 
-/**
- * ✅ NUOVA: Quando cambiano le ore manualmente (per pacchetti ORE)
- */
-const onOreChange = () => {
-  const tipo = selectedStandardPackage.value?.tipo || props.packageData.tipo;
-  if (tipo === 'ORE') {
-    // Nessun ricalcolo necessario
-  }
-};
-
-/**
- * Inizializza il form con i dati del pacchetto corrente
- */
 const initForm = () => {
   form.value = {
     standardPackageId: props.packageData.standardPackageId || '',
@@ -324,21 +349,24 @@ const initForm = () => {
     oreAcquistate: parseFloat(props.packageData.oreAcquistate) || 0,
     orarioGiornaliero: parseFloat(props.packageData.orarioGiornaliero) || 3,
     prezzoTotale: parseFloat(props.packageData.prezzoTotale) || 0,
+    prezzoTotale: parseFloat(props.packageData.prezzoTotale) || 0,
     dataInizio: props.packageData.dataInizio ? props.packageData.dataInizio.split('T')[0] : '',
-    dataScadenza: props.packageData.dataScadenza ? props.packageData.dataScadenza.split('T')[0] : '',
+    dataScadenza: props.packageData.dataScadenza ? props.packageData.dataScadenza.split('T')[0] : '', // ✅ NUOVO
     note: props.packageData.note || '',
   };
   
-  // Imposta il pacchetto standard selezionato iniziale
   if (props.packageData.standardPackage) {
     selectedStandardPackage.value = props.packageData.standardPackage;
   }
 };
 
-/**
- * ✅ AGGIORNATA: Invia l'aggiornamento con giorni E ore
- */
 const submitUpdate = async () => {
+  // ✅ NUOVO: Verifica se pacchetto è chiuso
+  if (isPacchettoClosed.value) {
+    alert('❌ Impossibile modificare un pacchetto chiuso (pagato e senza ore disponibili)');
+    return;
+  }
+
   submitting.value = true;
   try {
     const selectedStdPkg = standardPackages.value.find(p => p.id === form.value.standardPackageId);
@@ -354,31 +382,26 @@ const submitUpdate = async () => {
       standardPackageId: form.value.standardPackageId,
       nome: selectedStdPkg.nome,
       tipo: selectedStdPkg.tipo,
-      
-      // ✅ Invia SEMPRE entrambi i campi
       giorniAcquistati: form.value.giorniAcquistati,
       oreAcquistate: form.value.oreAcquistate,
       orarioGiornaliero: selectedStdPkg.tipo === 'MENSILE' ? form.value.orarioGiornaliero : null,
-      
       prezzoTotale: form.value.prezzoTotale,
       dataInizio: form.value.dataInizio,
-      dataScadenza: form.value.dataScadenza || null,
+      dataScadenza: form.value.dataScadenza, // ✅ NUOVO
       note: form.value.note,
     };
 
-    // Ricalcola importo residuo in base al nuovo prezzo
-    const nuovoImportoResiduo = form.value.prezzoTotale - parseFloat(props.packageData.importoPagato || 0);
-    updateData.importoResiduo = nuovoImportoResiduo;
+    // ✅ RIMOSSO: dataScadenza (calcolata dal backend)
+    // Il backend ricalcola automaticamente se cambia dataInizio
 
-    // Invia aggiornamento
     await packagesAPI.update(props.packageData.id, updateData);
 
-    alert('Pacchetto aggiornato con successo!');
+    alert('✅ Pacchetto aggiornato con successo!');
     emit('updated');
     emit('close');
   } catch (error) {
     console.error('Errore aggiornamento pacchetto:', error);
-    alert('Errore durante l\'aggiornamento del pacchetto. Riprova.');
+    alert('❌ Errore durante l\'aggiornamento del pacchetto. Riprova.');
   } finally {
     submitting.value = false;
   }
@@ -393,6 +416,7 @@ onMounted(async () => {
   initForm();
 });
 </script>
+
 
 <style scoped>
 /* ========================================
@@ -621,4 +645,52 @@ textarea.form-control {
     grid-template-columns: 1fr;
   }
 }
+
+/* Scadenza Display */
+.scadenza-display {
+  padding: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.scadenza-auto {
+  font-size: 16px;
+  font-weight: 600;
+  color: #4f46e5;
+  margin-bottom: 4px;
+}
+
+.scadenza-mensile {
+  font-size: 16px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+/* Alert Danger */
+.alert {
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.alert-danger {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(220, 38, 38, 0.05));
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.alert-danger strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #dc2626;
+  font-size: 14px;
+}
+
+.alert-danger p {
+  margin: 0;
+  font-size: 13px;
+  color: #374151;
+}
+
 </style>

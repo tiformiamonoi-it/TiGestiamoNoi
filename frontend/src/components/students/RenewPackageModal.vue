@@ -167,12 +167,58 @@
               ></textarea>
             </div>
 
+            <div v-if="oreNegativeTotali < 0" class="alert-ore-negative">
+                <div class="alert-header">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  <span>Ore in negativo rilevate</span>
+                </div>
+                <p class="alert-message">
+                  Lo studente ha <strong>{{ Math.abs(oreNegativeTotali).toFixed(1) }}h in negativo</strong> da altri pacchetti.
+                </p>
+                
+                <label class="checkbox-recupero">
+                  <input v-model="form.recuperaOreNegative" type="checkbox" />
+                  <span>Recupera ore negative nel nuovo pacchetto</span>
+                </label>
+                
+                <div v-if="form.recuperaOreNegative" class="recovery-info">
+                  <p>
+                    ✅ Il nuovo pacchetto inizierà con <strong>{{ oreEffettiveIniziali.toFixed(1) }}h</strong> disponibili
+                    <br>
+                    <small>({{ selectedStandardPackage?.oreIncluse || 0 }}h pacchetto - {{ Math.abs(oreNegativeTotali).toFixed(1) }}h negative)</small>
+                  </p>
+                </div>
+              </div>
+
             <!-- Riepilogo -->
             <div v-if="selectedStandardPackage" class="summary">
               <div class="summary-row">
-                <span>Periodo validità</span>
-                <strong>{{ formatDate(form.dataInizio) }} - {{ formatDate(dataScadenzaCalcolata) }}</strong>
+              <span>Data inizio</span>
+              <strong>{{ formatDate(form.dataInizio) }}</strong>
+            </div>
+
+            <div class="summary-row">
+              <span>Data scadenza</span>
+              <strong v-if="selectedStandardPackage.tipo === 'ORE'" class="scadenza-ore">
+                15 Giugno {{ annoScolastico.split('/')[1] }}
+                <small>(Fine anno scolastico {{ annoScolastico }})</small>
+              </strong>
+              <strong v-else class="scadenza-mensile">
+                {{ formatDate(dataScadenzaCalcolata) }}
+                <small>(30 giorni dalla data di inizio)</small>
+              </strong>
+            </div>
+
+
+              <div class="summary-row">
+                <span>Ore iniziali</span>
+                <strong>{{ oreEffettiveIniziali.toFixed(1) }}h</strong>
               </div>
+  
               <div class="summary-row total">
                 <span>Totale</span>
                 <strong>€{{ formatCurrency(form.prezzoTotale) }}</strong>
@@ -208,7 +254,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { packagesAPI, standardPackagesAPI } from '@/services/api';
+import { packagesAPI, standardPackagesAPI, studentsAPI } from '@/services/api';
 
 // ========================================
 // PROPS & EMITS
@@ -234,8 +280,10 @@ const emit = defineEmits(['close', 'renewed']);
 
 const submitting = ref(false);
 const loadingStandardPackages = ref(false);
+const loadingOreNegative = ref(false);
 const standardPackages = ref([]);
 const selectedStandardPackage = ref(null);
+const oreNegativeTotali = ref(0); // ✅ NUOVO
 
 const form = ref({
   dataInizio: '',
@@ -244,7 +292,8 @@ const form = ref({
   importoPagamento: 0,
   metodoPagamento: 'CONTANTI',
   richiedeFattura: false,
-  note: ''
+  note: '',
+  recuperaOreNegative: false // ✅ NUOVO
 });
 
 // ========================================
@@ -273,27 +322,43 @@ const groupedPackages = computed(() => {
   return groups;
 });
 
-const dataScadenzaCalcolata = computed(() => {
-  if (!form.value.dataInizio || !selectedStandardPackage.value) return '';
 
-  const dataInizio = new Date(form.value.dataInizio);
-  let durataGiorni = 0;
-
-  if (selectedStandardPackage.value.tipo === 'ORE') {
-    durataGiorni = parseInt(selectedStandardPackage.value.durataGiorni || 30);
-  } else if (selectedStandardPackage.value.tipo === 'MENSILE') {
-    durataGiorni = parseInt(selectedStandardPackage.value.giorniInclusi || 30);
+// ✅ NUOVO: Anno scolastico per pacchetti ORE
+const annoScolastico = computed(() => {
+  if (!form.value.dataInizio) return '';
+  
+  const data = new Date(form.value.dataInizio);
+  const anno = data.getFullYear();
+  const mese = data.getMonth();
+  
+  if (mese >= 8) {
+    return `${anno}/${anno + 1}`;
+  } else {
+    return `${anno - 1}/${anno}`;
   }
-
-  const dataScadenza = new Date(dataInizio);
-  dataScadenza.setDate(dataScadenza.getDate() + durataGiorni);
-
-  return dataScadenza.toISOString().split('T')[0];
 });
 
 const residuoDopoPagamento = computed(() => {
   if (!form.value.registraPagamentoImmediato) return 0;
   return Math.max(0, form.value.prezzoTotale - form.value.importoPagamento);
+});
+
+// ✅ NUOVO: Ore effettive che avrà il pacchetto dopo recupero
+const oreEffettiveIniziali = computed(() => {
+  if (!selectedStandardPackage.value) return 0;
+  
+  let oreBase = parseFloat(selectedStandardPackage.value.oreIncluse || 0);
+  
+  if (selectedStandardPackage.value.tipo === 'MENSILE') {
+    oreBase = parseFloat(selectedStandardPackage.value.giorniInclusi) * 
+              parseFloat(selectedStandardPackage.value.orarioGiornaliero);
+  }
+  
+  if (form.value.recuperaOreNegative) {
+    return oreBase + oreNegativeTotali.value; // Somma algebrica (oreNegative è negativo)
+  }
+  
+  return oreBase;
 });
 
 // ========================================
@@ -318,6 +383,7 @@ const formatCurrency = (value) => {
 
 const formatDate = (date) => {
   if (!date) return '-';
+  if (date === 'Nessuna scadenza temporale') return date;
   return new Date(date).toLocaleDateString('it-IT', {
     day: '2-digit',
     month: '2-digit',
@@ -335,6 +401,51 @@ const loadStandardPackages = async () => {
     alert('❌ Errore durante il caricamento dei pacchetti');
   } finally {
     loadingStandardPackages.value = false;
+  }
+};
+// ✅ AGGIUNGI QUESTO COMPUTED
+const dataScadenzaCalcolata = computed(() => {
+  if (!form.value.dataInizio || !selectedStandardPackage.value) return '';
+
+  const dataInizio = new Date(form.value.dataInizio);
+  
+  if (selectedStandardPackage.value.tipo === 'ORE') {
+    // Scadenza 15 giugno
+    const meseInizio = dataInizio.getMonth();
+    const annoScadenza = meseInizio >= 8 
+      ? dataInizio.getFullYear() + 1 
+      : dataInizio.getFullYear();
+    
+    return new Date(annoScadenza, 5, 15).toISOString().split('T')[0];
+  } else {
+    // MENSILE: +30 giorni
+    const scadenza = new Date(dataInizio);
+    scadenza.setDate(scadenza.getDate() + 30);
+    return scadenza.toISOString().split('T')[0];
+  }
+});
+
+// ✅ NUOVO: Carica ore negative dello studente
+const loadOreNegative = async () => {
+  loadingOreNegative.value = true;
+  try {
+    const response = await studentsAPI.getById(props.student.id);
+    const pacchetti = response.data.student?.pacchetti || [];
+    
+    // Calcola totale ore negative
+    const totale = pacchetti.reduce((sum, pkg) => {
+      const oreResiduo = parseFloat(pkg.oreResiduo || 0);
+      if (oreResiduo < 0) {
+        return sum + oreResiduo;
+      }
+      return sum;
+    }, 0);
+    
+    oreNegativeTotali.value = totale;
+  } catch (error) {
+    console.error('Errore caricamento ore negative:', error);
+  } finally {
+    loadingOreNegative.value = false;
   }
 };
 
@@ -381,30 +492,21 @@ const handleSubmit = async () => {
       dataInizio: new Date(form.value.dataInizio).toISOString(),
       prezzoTotale: parseFloat(form.value.prezzoTotale),
       note: form.value.note || null,
+      recuperaOreNegative: form.value.recuperaOreNegative // ✅ NUOVO
     };
 
     // Campi specifici per tipo
     if (pkg.tipo === 'ORE') {
       payload.oreAcquistate = parseFloat(pkg.oreIncluse);
-      payload.durataGiorni = parseInt(pkg.durataGiorni || 30);
-      payload.oreResiduo = parseFloat(pkg.oreIncluse);
     } else if (pkg.tipo === 'MENSILE') {
       payload.giorniAcquistati = parseInt(pkg.giorniInclusi);
       payload.orarioGiornaliero = parseFloat(pkg.orarioGiornaliero);
-      payload.giorniResiduo = parseInt(pkg.giorniInclusi);
       const oreTotali = payload.giorniAcquistati * payload.orarioGiornaliero;
       payload.oreAcquistate = oreTotali;
-      payload.oreResiduo = oreTotali;
     }
 
-    // Calcola data scadenza
-    const dataInizio = new Date(form.value.dataInizio);
-    const durataGiorni = pkg.tipo === 'ORE' 
-      ? parseInt(pkg.durataGiorni || 30)
-      : parseInt(pkg.giorniInclusi);
-    const dataScadenza = new Date(dataInizio);
-    dataScadenza.setDate(dataScadenza.getDate() + durataGiorni);
-    payload.dataScadenza = dataScadenza.toISOString();
+    // ✅ RIMOSSO: Calcolo dataScadenza (lo fa il backend)
+    // Il backend calcola automaticamente in base al tipo
 
     // Aggiungi pagamento se richiesto
     if (form.value.registraPagamentoImmediato) {
@@ -439,6 +541,7 @@ const handleSubmit = async () => {
 
 onMounted(async () => {
   await loadStandardPackages();
+  await loadOreNegative(); // ✅ NUOVO
 
   // Se c'è un pacchetto precedente, imposta data dopo scadenza
   if (props.packageData?.dataScadenza) {
@@ -454,6 +557,7 @@ onMounted(async () => {
   }
 });
 </script>
+
 
 
 
@@ -839,6 +943,106 @@ onMounted(async () => {
   .btn {
     width: 100%;
   }
+}
+
+
+  /* Alert Ore Negative */
+.alert-ore-negative {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(220, 38, 38, 0.05));
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.alert-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.alert-header svg {
+  color: #dc2626;
+}
+
+.alert-message {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: #374151;
+}
+
+.alert-message strong {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.checkbox-recupero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  transition: all 0.2s;
+}
+
+.checkbox-recupero:hover {
+  border-color: #4f46e5;
+  background: rgba(79, 70, 229, 0.02);
+}
+
+.checkbox-recupero input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #4f46e5;
+}
+
+.recovery-info {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid #22c55e;
+  border-radius: 6px;
+}
+
+.recovery-info p {
+  margin: 0;
+  font-size: 14px;
+  color: #15803d;
+  font-weight: 500;
+}
+
+.recovery-info small {
+  font-size: 12px;
+  color: #16a34a;
+  font-weight: 400;
+}
+
+/* Scadenza Styling */
+.scadenza-ore {
+  color: #4f46e5;
+}
+
+.scadenza-mensile {
+  color: #6b7280;
+}
+
+.summary-row strong small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 4px;
+  opacity: 0.8;
 }
 </style>
 

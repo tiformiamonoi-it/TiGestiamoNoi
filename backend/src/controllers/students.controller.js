@@ -10,10 +10,10 @@ const { validationResult } = require('express-validator');
  */
 const getStudents = async (req, res, next) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      search, 
+    const {
+      page = 1,
+      limit = 20,
+      search,
       active,
       scuola,
       stato,
@@ -21,12 +21,12 @@ const getStudents = async (req, res, next) => {
       oreNegative,
       pagamentoSospeso
     } = req.query;
-    
+
     const skip = (page - 1) * limit;
 
     // Costruisci filtri BASE
     const where = {};
-    
+
     if (active !== undefined) {
       where.active = active === 'true';
     }
@@ -58,43 +58,43 @@ const getStudents = async (req, res, next) => {
         orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
         include: {
           pacchetti: {
-              where: { 
-                stati: { 
-                  hasSome: ['ATTIVO', 'DA_PAGARE', 'IN_SCADENZA', 'ESAURITO', 'SCADUTO']
-                },
+            where: {
+              stati: {
+                hasSome: ['ATTIVO', 'DA_PAGARE', 'IN_SCADENZA', 'ESAURITO', 'SCADUTO']
               },
-              select: {
-                id: true,
-                nome: true,
-                tipo: true,
-                stati: true,
-                oreAcquistate: true,
-                oreResiduo: true,
-                giorniAcquistati: true,
-                giorniResiduo: true,
-                orarioGiornaliero: true,
-                prezzoTotale: true,
-                importoPagato: true,
-                importoResiduo: true,
-                dataInizio: true,
-                dataScadenza: true,
-                lessonStudents: {
-                  select: {
-                    id: true,
-                    lesson: {
-                      select: {
-                        id: true,
-                        data: true,
-                      }
-                    }
-                  },
-                },
-              },
-              orderBy: { createdAt: 'asc' }, // ✅ PIÙ VECCHIO
-              take: 1,
             },
+            select: {
+              id: true,
+              nome: true,
+              tipo: true,
+              stati: true,
+              oreAcquistate: true,
+              oreResiduo: true,
+              giorniAcquistati: true,
+              giorniResiduo: true,
+              orarioGiornaliero: true,
+              prezzoTotale: true,
+              importoPagato: true,
+              importoResiduo: true,
+              dataInizio: true,
+              dataScadenza: true,
+              lessonStudents: {
+                select: {
+                  id: true,
+                  lesson: {
+                    select: {
+                      id: true,
+                      data: true,
+                    }
+                  }
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' }, // ✅ PIÙ VECCHIO
+            take: 1,
+          },
           _count: {
-            select: { 
+            select: {
               lessonStudents: true  // ✅ CAMBIATO da lezioni a lessonStudents
             },
           },
@@ -271,9 +271,18 @@ const getStudents = async (req, res, next) => {
  * GET /api/students/:id
  * Dettaglio studente con pacchetti e lezioni
  */
+const { updateAllStudentPackageStates } = require('../utils/packageStates');
+
+/**
+ * GET /api/students/:id
+ * Dettaglio studente con pacchetti e lezioni
+ */
 const getStudentById = async (req, res, next) => {
   try {
     const { id } = req.params;
+
+    // ✅ LAZY UPDATE: Aggiorna stati pacchetti prima di restituire
+    await updateAllStudentPackageStates(id);
 
     const student = await prisma.student.findUnique({
       where: { id },
@@ -329,9 +338,9 @@ const createStudent = async (req, res, next) => {
       data: req.body,
     });
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Studente creato con successo',
-      student 
+      student
     });
   } catch (error) {
     next(error);
@@ -357,9 +366,9 @@ const updateStudent = async (req, res, next) => {
       data: req.body,
     });
 
-    res.json({ 
+    res.json({
       message: 'Studente aggiornato con successo',
-      student 
+      student
     });
   } catch (error) {
     next(error);
@@ -380,9 +389,9 @@ const deleteStudent = async (req, res, next) => {
       data: { active: false },
     });
 
-    res.json({ 
+    res.json({
       message: 'Studente disattivato con successo',
-      student 
+      student
     });
   } catch (error) {
     next(error);

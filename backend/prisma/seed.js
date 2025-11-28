@@ -13,7 +13,7 @@ async function main() {
   // ============================================
   // 1. CONFIGURAZIONI SISTEMA (Tariffe globali)
   // ============================================
-  
+
   console.log('⚙️  Creazione configurazioni sistema...');
 
   await prisma.systemConfig.upsert({
@@ -87,7 +87,7 @@ async function main() {
   // ============================================
   // 2. UTENTI E TUTOR
   // ============================================
-  
+
   console.log('👤 Creazione utenti...');
 
   // Admin
@@ -187,7 +187,7 @@ async function main() {
   // ============================================
   // 3. STUDENTI
   // ============================================
-  
+
   console.log('\n👨‍🎓 Creazione studenti...');
 
   const studente1 = await prisma.student.create({
@@ -249,7 +249,7 @@ async function main() {
   // ============================================
   // 4. PACCHETTI STANDARD
   // ============================================
-  
+
   console.log('\n📦 Creazione pacchetti standard...');
 
   const stdPkgMedieMensile = await prisma.standardPackage.create({
@@ -262,7 +262,7 @@ async function main() {
       giorniInclusi: 20,
       orarioGiornaliero: 3.00,
       prezzoStandard: 450.00,
-      durataGiorni: 30,
+
       active: true,
     },
   });
@@ -276,7 +276,7 @@ async function main() {
       categoria: 'Superiori',
       oreIncluse: 10.00,
       prezzoStandard: 150.00,
-      durataGiorni: 60,
+
       active: true,
     },
   });
@@ -292,7 +292,7 @@ async function main() {
       giorniInclusi: 20,
       orarioGiornaliero: 2.00,
       prezzoStandard: 300.00,
-      durataGiorni: 30,
+
       active: true,
     },
   });
@@ -301,11 +301,13 @@ async function main() {
   // ============================================
   // 5. SLOT ORARI
   // ============================================
-  
+
   console.log('\n⏰ Creazione slot orari...');
 
-  const slot1 = await prisma.timeSlot.create({
-    data: {
+  const slot1 = await prisma.timeSlot.upsert({
+    where: { oraInizio_oraFine: { oraInizio: '15:30', oraFine: '16:30' } },
+    update: {},
+    create: {
       oraInizio: '15:30',
       oraFine: '16:30',
       descrizione: 'Pomeriggio - Primo turno',
@@ -314,8 +316,10 @@ async function main() {
   });
   console.log('✅ Slot creato:', `${slot1.oraInizio}-${slot1.oraFine}`);
 
-  const slot2 = await prisma.timeSlot.create({
-    data: {
+  const slot2 = await prisma.timeSlot.upsert({
+    where: { oraInizio_oraFine: { oraInizio: '16:30', oraFine: '17:30' } },
+    update: {},
+    create: {
       oraInizio: '16:30',
       oraFine: '17:30',
       descrizione: 'Pomeriggio - Secondo turno',
@@ -324,8 +328,10 @@ async function main() {
   });
   console.log('✅ Slot creato:', `${slot2.oraInizio}-${slot2.oraFine}`);
 
-  const slot3 = await prisma.timeSlot.create({
-    data: {
+  const slot3 = await prisma.timeSlot.upsert({
+    where: { oraInizio_oraFine: { oraInizio: '17:30', oraFine: '18:30' } },
+    update: {},
+    create: {
       oraInizio: '17:30',
       oraFine: '18:30',
       descrizione: 'Pomeriggio - Terzo turno',
@@ -337,7 +343,7 @@ async function main() {
   // ============================================
   // 6. PACCHETTI STUDENTI
   // ============================================
-  
+
   console.log('\n📦 Creazione pacchetti studenti...');
 
   // Pacchetto 1 - Marco (da template Medie Mensile, personalizzato)
@@ -406,7 +412,7 @@ async function main() {
   // ============================================
   // 7. PAGAMENTI
   // ============================================
-  
+
   console.log('\n💰 Creazione pagamenti...');
 
   // Pagamento 1 - Acconto Marco
@@ -453,20 +459,28 @@ async function main() {
   // ============================================
   // 8. LEZIONI
   // ============================================
-  
+
   console.log('\n📚 Creazione lezioni...');
 
   // Lezione 1 - Marco con Maria (completata)
   const lezione1 = await prisma.lesson.create({
     data: {
-      studentId: studente1.id,
-      packageId: pacchetto1.id,
       tutorId: tutor1.id,
       data: new Date('2025-11-04'),
       timeSlotId: slot1.id,
-      tipo: 'INDIVIDUALE',
-      costoTutor: 5.00,
+      tipo: 'SINGOLA',
+      compensoTutor: 5.00,
       note: 'Equazioni di secondo grado',
+      lessonStudents: {
+        create: [
+          {
+            studentId: studente1.id,
+            packageId: pacchetto1.id,
+            mezzaLezione: false,
+            oreScalate: 1.0,
+          }
+        ]
+      }
     },
   });
   console.log('✅ Lezione creata: Marco - 15:30-16:30');
@@ -474,14 +488,22 @@ async function main() {
   // Lezione 2 - Marco con Maria (completata)
   const lezione2 = await prisma.lesson.create({
     data: {
-      studentId: studente1.id,
-      packageId: pacchetto1.id,
       tutorId: tutor1.id,
       data: new Date('2025-11-05'),
       timeSlotId: slot2.id,
-      tipo: 'INDIVIDUALE',
-      costoTutor: 5.00,
+      tipo: 'SINGOLA',
+      compensoTutor: 5.00,
       note: 'Geometria - Teorema di Pitagora',
+      lessonStudents: {
+        create: [
+          {
+            studentId: studente1.id,
+            packageId: pacchetto1.id,
+            mezzaLezione: false,
+            oreScalate: 1.0,
+          }
+        ]
+      }
     },
   });
   console.log('✅ Lezione creata: Marco - 16:30-17:30');
@@ -489,14 +511,22 @@ async function main() {
   // Lezione 3 - Giulia con Sofia (completata)
   const lezione3 = await prisma.lesson.create({
     data: {
-      studentId: studente2.id,
-      packageId: pacchetto2.id,
       tutorId: tutor3.id,
       data: new Date('2025-11-04'),
       timeSlotId: slot3.id,
-      tipo: 'INDIVIDUALE',
-      costoTutor: 5.00,
+      tipo: 'SINGOLA',
+      compensoTutor: 5.00,
       note: 'Chimica organica',
+      lessonStudents: {
+        create: [
+          {
+            studentId: studente2.id,
+            packageId: pacchetto2.id,
+            mezzaLezione: false,
+            oreScalate: 1.0,
+          }
+        ]
+      }
     },
   });
   console.log('✅ Lezione creata: Giulia - 17:30-18:30');
@@ -504,14 +534,22 @@ async function main() {
   // Lezione 4 - Giulia con Sofia (completata)
   const lezione4 = await prisma.lesson.create({
     data: {
-      studentId: studente2.id,
-      packageId: pacchetto2.id,
       tutorId: tutor3.id,
       data: new Date('2025-11-05'),
       timeSlotId: slot3.id,
-      tipo: 'INDIVIDUALE',
-      costoTutor: 5.00,
+      tipo: 'SINGOLA',
+      compensoTutor: 5.00,
       note: 'Biologia cellulare',
+      lessonStudents: {
+        create: [
+          {
+            studentId: studente2.id,
+            packageId: pacchetto2.id,
+            mezzaLezione: false,
+            oreScalate: 1.0,
+          }
+        ]
+      }
     },
   });
   console.log('✅ Lezione creata: Giulia - 17:30-18:30');
@@ -519,7 +557,7 @@ async function main() {
   // ============================================
   // 9. MOVIMENTI CONTABILI
   // ============================================
-  
+
   console.log('\n💼 Creazione movimenti contabili...');
 
   // Entrate - Pagamenti pacchetti
@@ -609,13 +647,91 @@ async function main() {
   console.log('✅ 4 uscite create (compensi tutor)');
 
   // ============================================
+  // 10. PAGAMENTI TUTOR (NUOVO)
+  // ============================================
+
+  console.log('\n💸 Creazione pagamenti tutor...');
+
+  // Simuliamo Ottobre (Mese passato)
+  // Lezioni Ottobre per Maria
+  const lezioneOtt1 = await prisma.lesson.create({
+    data: {
+      tutorId: tutor1.id,
+      data: new Date('2025-10-10'),
+      timeSlotId: slot1.id,
+      tipo: 'SINGOLA',
+      compensoTutor: 5.00,
+      note: 'Lezione Ottobre 1',
+      lessonStudents: {
+        create: [
+          {
+            studentId: studente1.id,
+            packageId: pacchetto1.id,
+          }
+        ]
+      }
+    },
+  });
+
+  const lezioneOtt2 = await prisma.lesson.create({
+    data: {
+      tutorId: tutor1.id,
+      data: new Date('2025-10-12'),
+      timeSlotId: slot1.id,
+      tipo: 'SINGOLA',
+      compensoTutor: 5.00,
+      note: 'Lezione Ottobre 2',
+      lessonStudents: {
+        create: [
+          {
+            studentId: studente1.id,
+            packageId: pacchetto1.id,
+          }
+        ]
+      }
+    },
+  });
+
+  // Pagamento Ottobre per Maria (Saldato)
+  await prisma.tutorPayment.create({
+    data: {
+      tutorId: tutor1.id,
+      mese: new Date('2025-10-01'), // Riferimento Ottobre
+      importo: 10.00, // 2 lezioni da 5€
+      dataPagamento: new Date('2025-11-02'),
+      metodo: 'BONIFICO',
+      note: 'Saldo Ottobre',
+    },
+  });
+  console.log('✅ Pagamento Tutor creato: Maria - Ottobre (Saldato)');
+
+  // Pagamento Novembre per Sofia (Saldato in anticipo/acconto)
+  // Sofia ha 2 lezioni a Novembre (create sopra) = 10€
+  await prisma.tutorPayment.create({
+    data: {
+      tutorId: tutor3.id,
+      mese: new Date('2025-11-01'),
+      importo: 10.00,
+      dataPagamento: new Date('2025-11-06'),
+      metodo: 'CONTANTI',
+      note: 'Saldo Novembre',
+    },
+  });
+  console.log('✅ Pagamento Tutor creato: Sofia - Novembre (Saldato)');
+
+  // Maria ha lezioni a Novembre (create sopra) ma NESSUN pagamento
+  // Quindi Maria risulterà "DA PAGARE" per Novembre nella dashboard
+
+  console.log('✅ 2 pagamenti tutor creati');
+
+  // ============================================
   // RIEPILOGO
   // ============================================
-  
+
   console.log('\n✅ ========================================');
   console.log('✅ SEEDING COMPLETATO CON SUCCESSO!');
   console.log('✅ ========================================\n');
-  
+
   console.log('📊 Dati creati:');
   console.log('  ⚙️  Configurazioni: 6');
   console.log('  👤 Utenti: 4 (1 admin + 3 tutor)');
@@ -626,7 +742,7 @@ async function main() {
   console.log('  💰 Pagamenti: 3');
   console.log('  📚 Lezioni: 4');
   console.log('  💼 Movimenti Contabili: 7\n');
-  
+
   console.log('🔐 Credenziali di accesso:');
   console.log('  Admin:');
   console.log('    📧 Email: admin@tiformiamonoi.it');

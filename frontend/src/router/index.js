@@ -68,6 +68,16 @@ const router = createRouter({
           component: () => import('@/views/settings/SettingsView.vue'),
           meta: { requiresAdmin: true },
         },
+        {
+          path: 'tutors',
+          name: 'tutors',
+          component: () => import('@/views/tutors/TutorListView.vue'),
+        },
+        {
+          path: 'tutors/:id',
+          name: 'tutor-detail',
+          component: () => import('@/views/tutors/TutorDetailView.vue'),
+        },
       ],
     },
   ],

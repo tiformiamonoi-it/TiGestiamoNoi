@@ -38,17 +38,18 @@ const getDashboardStats = async (req, res, next) => {
       // Default: mese corrente
       startFinanze = startOfMonth;
       endFinanze = endOfMonth;
-      const nomiMesi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 
-                        'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+      const nomiMesi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+        'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
       labelPeriodo = `${nomiMesi[today.getMonth()]} ${today.getFullYear()}`;
     }
 
     // Calcola date per performance tutor
-    const dataInizioTutor = periodoTutor === 'mese' 
-      ? startOfMonth 
+    const dataInizioTutor = periodoTutor === 'mese'
+      ? startOfMonth
       : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     // 1. Studenti attivi (con pacchetti attivi)
+    console.log('👉 1. Calcolo studenti attivi...');
     const studentiAttivi = await prisma.student.count({
       where: {
         active: true,
@@ -77,6 +78,7 @@ const getDashboardStats = async (req, res, next) => {
       : 0;
 
     // 2. Pacchetti attivi
+    console.log('👉 2. Calcolo pacchetti attivi...');
     const pacchettiAttivi = await prisma.package.count({
       where: {
         stati: {
@@ -96,6 +98,7 @@ const getDashboardStats = async (req, res, next) => {
     const pacchettiTrend = pacchettiNuoviSettimana;
 
     // 3. Lezioni oggi
+    console.log('👉 3. Calcolo lezioni oggi...');
     const startOfToday = new Date(today.setHours(0, 0, 0, 0));
     const endOfToday = new Date(today.setHours(23, 59, 59, 999));
 
@@ -111,6 +114,7 @@ const getDashboardStats = async (req, res, next) => {
     const lezioniProgrammate = lezioniOggi;
 
     // 4. Saldo periodo finanze (entrate - uscite)
+    console.log('👉 4. Calcolo finanze...');
     const entrateResult = await prisma.accountingEntry.aggregate({
       where: {
         tipo: 'ENTRATA',
@@ -225,6 +229,7 @@ const getDashboardStats = async (req, res, next) => {
     }
 
     // 5. Azioni prioritarie
+    console.log('👉 5. Calcolo azioni prioritarie...');
     const tuttiPacchetti = await prisma.package.findMany({
       where: {
         stati: {
@@ -260,6 +265,7 @@ const getDashboardStats = async (req, res, next) => {
     ).length;
 
     // 6. Finanze dettagliate
+    console.log('👉 6. Calcolo finanze dettagliate...');
     const nuoviPacchetti = await prisma.package.count({
       where: {
         createdAt: {
@@ -274,6 +280,7 @@ const getDashboardStats = async (req, res, next) => {
     const compensiPagati = uscite;
 
     // 7. Attività di oggi
+    console.log('👉 7. Calcolo attività oggi...');
     const lezioniOggiList = await prisma.lesson.findMany({
       where: {
         data: {
@@ -288,7 +295,7 @@ const getDashboardStats = async (req, res, next) => {
 
     // ✅ CORRETTO: compensoTutor invece di costoTutor
     const costoTutorOggi = lezioniOggiList.reduce((sum, lesson) => sum + parseFloat(lesson.compensoTutor || 0), 0);
-    
+
     const guadagnoStimato = oreErogate * 13.33;
     const margineNetto = guadagnoStimato - costoTutorOggi;
     const percentualeMargine = guadagnoStimato > 0
@@ -300,6 +307,7 @@ const getDashboardStats = async (req, res, next) => {
       : 0;
 
     // 8. Performance Tutor
+    console.log('👉 8. Calcolo performance tutor...');
     const lezioniPerTutor = await prisma.lesson.groupBy({
       by: ['tutorId'],
       where: {
@@ -334,8 +342,8 @@ const getDashboardStats = async (req, res, next) => {
 
           // Calcola ore disponibili in base al periodo
           const oreDisponibiliSettimanali = tutor.tutorProfile?.oreDisponibiliSettimanali || 15;
-          const oreDisponibili = periodoTutor === 'mese' 
-            ? oreDisponibiliSettimanali * 4 
+          const oreDisponibili = periodoTutor === 'mese'
+            ? oreDisponibiliSettimanali * 4
             : oreDisponibiliSettimanali;
 
           const percentualeCapacita = Math.round((oreLavorate / oreDisponibili) * 100);
@@ -355,6 +363,7 @@ const getDashboardStats = async (req, res, next) => {
     );
 
     // 9. Ripartizione Pacchetti per tipologia
+    console.log('👉 9. Calcolo ripartizione pacchetti...');
     const pacchetti = await prisma.package.findMany({
       where: {
         stati: {
@@ -375,7 +384,7 @@ const getDashboardStats = async (req, res, next) => {
 
     pacchetti.forEach((p) => {
       const nomeTipo = p.nome || 'Altro';
-      
+
       if (!raggruppamento[nomeTipo]) {
         raggruppamento[nomeTipo] = {
           nome: nomeTipo,
@@ -383,18 +392,18 @@ const getDashboardStats = async (req, res, next) => {
           guadagnoTotale: 0,
         };
       }
-      
+
       raggruppamento[nomeTipo].count += 1;
       raggruppamento[nomeTipo].guadagnoTotale += parseFloat(p.importoPagato || 0);
     });
 
     // Converti in array e calcola guadagno medio
     const ripartizionePacchetti = Object.values(raggruppamento).map((tipo) => {
-      const percentuale = totaleAttivi > 0 
-        ? Math.round((tipo.count / totaleAttivi) * 100) 
+      const percentuale = totaleAttivi > 0
+        ? Math.round((tipo.count / totaleAttivi) * 100)
         : 0;
-      
-      const guadagnoMedio = tipo.count > 0 
+
+      const guadagnoMedio = tipo.count > 0
         ? parseFloat((tipo.guadagnoTotale / tipo.count).toFixed(2))
         : 0;
 
@@ -420,6 +429,7 @@ const getDashboardStats = async (req, res, next) => {
     const performanceTutorFiltered = performanceTutor.filter((t) => t !== null);
 
     // Risposta
+    console.log('👉 Invio risposta...');
     res.json({
       stats: {
         studentiAttivi,

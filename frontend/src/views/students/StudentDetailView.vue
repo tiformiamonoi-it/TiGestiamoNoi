@@ -115,15 +115,7 @@
           >
             📦 Gestisci Pacchetti
           </button>
-          
-          <button 
-            @click="openAddLesson" 
-            class="btn-action primary"
-            :disabled="!student.active"
-            :class="{ 'btn-disabled': !student.active }"
-          >
-            ➕ Aggiungi a Lezione
-          </button>
+        
         </div>
       </div>
 
@@ -365,9 +357,9 @@
         <div class="progress-text">{{ getProgressText(pkg) }}</div>
       </div>
 
-      <!-- Sezione Ore Perse + Ore Effettive (solo MENSILE ATTIVO) -->
+      <!-- Sezione Ore Perse + Ore Effettive (solo MENSILE con ore perse) -->
       <div 
-        v-if="pkg.tipo === 'MENSILE' && pkg.stati?.includes('ATTIVO') && getPackageLostHours(pkg) > 0" 
+        v-if="pkg.tipo === 'MENSILE' && getPackageLostHours(pkg) > 0" 
         class="package-hours-detail"
       >
         <div class="hours-detail-item lost">
@@ -520,12 +512,6 @@
                 📦 Storico Pacchetti
               </button>
               <button
-                :class="['storico-tab-btn', { active: storicoTab === 'pagamenti' }]"
-                @click="storicoTab = 'pagamenti'"
-              >
-                💰 Storico Pagamenti
-              </button>
-              <button
                 :class="['storico-tab-btn', { active: storicoTab === 'lezioni' }]"
                 @click="storicoTab = 'lezioni'"
               >
@@ -553,6 +539,24 @@
                       >
                         {{ stato }}
                       </span>
+                      
+                      <!-- Actions -->
+                      <div class="package-history-actions">
+                        <button 
+                          @click="modificaPacchetto(pkg)" 
+                          class="btn-icon-action" 
+                          title="Modifica"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          @click="eliminaPacchettoStorico(pkg)" 
+                          class="btn-icon-action danger" 
+                          title="Elimina"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -588,51 +592,82 @@
                         <div class="stat-value danger">€{{ formatCurrency(pkg.importoResiduo) }}</div>
                       </div>
                     </div>
+
+                    <!-- ✅ NUOVO: Lista Pagamenti Integrata -->
+                    <div class="package-payments-compact">
+                      <div class="payments-header">Pagamenti</div>
+                      <div v-if="pkg.pagamenti && pkg.pagamenti.length > 0" class="payments-list-compact">
+                        <div v-for="pag in pkg.pagamenti" :key="pag.id" class="payment-row-compact">
+                          <span class="date">{{ formatDate(pag.dataPagamento) }}</span>
+                          <span class="type">{{ getPaymentTypeLabel(pag.tipoPagamento) }}</span>
+                          <span class="amount">€{{ formatCurrency(pag.importo) }}</span>
+                          <span class="method">{{ getPaymentMethodLabel(pag.metodoPagamento) }}</span>
+                          <span v-if="pag.richiedeFattura" class="invoice" title="Fattura">📄</span>
+                          
+                          <!-- Delete Button -->
+                          <button 
+                            @click.stop="eliminaPagamento(pag, pkg)" 
+                            class="btn-delete-payment-compact" 
+                            title="Elimina pagamento"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                              <line x1="10" y1="11" x2="10" y2="17"></line>
+                              <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="no-payments-compact">
+                        Nessun pagamento
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Sub-Tab: Storico Pagamenti -->
-            <div v-if="storicoTab === 'pagamenti'" class="storico-content">
-              <div v-if="allPayments.length === 0" class="empty-state">
-                <p>Nessun pagamento trovato</p>
-              </div>
-              <div v-else class="payments-table">
-                <div v-for="payment in allPayments" :key="payment.id" class="payment-row">
-                  <div class="payment-date">{{ formatDate(payment.dataPagamento) }}</div>
-                  <div class="payment-method">
-                    <span class="badge">{{ payment.tipoPagamento }}</span>
-                    <span class="badge">{{ payment.metodoPagamento }}</span>
-                  </div>
-                  <div class="payment-amount">€{{ formatCurrency(payment.importo) }}</div>
-                  <div v-if="payment.richiedeFattura" class="payment-invoice">📄 Fattura</div>
-                  <div v-if="isAdmin" class="payment-actions">
-                    <button @click="eliminaPagamento(payment)" class="btn-delete">
-                      🗑️ Elimina
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Sub-Tab: Storico Lezioni -->
+            <!-- Sub-Tab: Storico Lezioni (Dinamico) -->
             <div v-if="storicoTab === 'lezioni'" class="storico-content">
               <div class="filter-section">
-                <input v-model="lessonDateFilter" type="date" class="filter-input" />
+                <div class="filter-group">
+                  <label>Da:</label>
+                  <input v-model="lessonFilterStart" type="date" class="filter-input" />
+                </div>
+                <div class="filter-group">
+                  <label>A:</label>
+                  <input v-model="lessonFilterEnd" type="date" class="filter-input" />
+                </div>
               </div>
-              <div v-if="filteredLessons.length === 0" class="empty-state">
+
+              <div v-if="historyLessons.length === 0 && !lessonsLoading" class="empty-state">
                 <p>Nessuna lezione trovata</p>
               </div>
+              
               <div v-else class="lezioni-list">
-                <div v-for="ls in filteredLessons.slice(0, 20)" :key="ls.id" class="lezione-item">
-                  <div class="lezione-date">{{ formatDate(ls.lesson.data) }}</div>
+                <div v-for="ls in historyLessons" :key="ls.id" class="lezione-item">
+                  <div class="lezione-date">{{ formatDate(ls.data) }}</div>
                   <div class="lezione-details">
-                    <span>{{ ls.lesson.timeSlot.oraInizio }}-{{ ls.lesson.timeSlot.oraFine }}</span>
-                    <span>{{ getTipoLezione(ls) }}</span>
+                    <span>{{ ls.timeSlot?.oraInizio }}-{{ ls.timeSlot?.oraFine }}</span>
+                    <!-- Nota: ls qui è una lezione diretta, non lessonStudent, quindi adattiamo -->
+                    <span>{{ ls.tutor?.firstName }} {{ ls.tutor?.lastName }}</span>
                   </div>
-                  <div class="lezione-hours">{{ ls.oreScalate }}h</div>
+                  <!-- Per lezioni storiche, mostriamo info generali -->
                 </div>
+                
+                <!-- Loading indicator -->
+                <div v-if="lessonsLoading" class="loading-more">
+                  Caricamento...
+                </div>
+
+                <!-- Load More Button -->
+                <button 
+                  v-if="historyLessons.length < lessonsTotal && !lessonsLoading" 
+                  @click="loadMoreLessons"
+                  class="btn-load-more"
+                >
+                  Carica altre lezioni
+                </button>
               </div>
             </div>
           </div>
@@ -675,14 +710,27 @@
         @close="closeRenewPackageModal"
         @renewed="handlePackageRenewed"
       />
+      
+      <!-- Modal Conferma Eliminazione -->
+      <div v-if="showDeleteConfirmModal" class="modal-overlay">
+        <div class="modal-content">
+          <h3>⚠️ Conferma Eliminazione</h3>
+          <p>Sei sicuro di voler eliminare il pacchetto <strong>{{ packageToDelete?.nome }}</strong>?</p>
+          <p class="text-danger">Verranno eliminate anche tutte le lezioni associate a questo pacchetto.</p>
+          <div class="modal-actions">
+            <button @click="showDeleteConfirmModal = false" class="btn-secondary">Annulla</button>
+            <button @click="confirmDeletePackage" class="btn-danger">Elimina</button>
+          </div>
+        </div>
+      </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue'; // ✅ Added watch
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-import { studentsAPI, paymentsAPI, packagesAPI } from '@/services/api';
+import { studentsAPI, paymentsAPI, packagesAPI, lessonsAPI } from '@/services/api';
 import CreateStudentModal from '@/components/students/CreateStudentModal.vue';
 import EditPackageModal from '@/components/students/EditPackageModal.vue';
 import RegisterPaymentModal from '@/components/students/RegisterPaymentModal.vue';
@@ -709,10 +757,19 @@ const student = ref(null);
 const loading = ref(false);
 const activeTab = ref('anagrafica');
 const storicoTab = ref('pacchetti');
-const lessonDateFilter = ref('');
+// const lessonDateFilter = ref(''); // RIMOSSO
+const lessonFilterStart = ref('');
+const lessonFilterEnd = ref('');
+const historyLessons = ref([]);
+const lessonsPage = ref(1);
+const lessonsTotal = ref(0);
+const lessonsLoading = ref(false);
+
 const showEditModal = ref(false);
 const showMenu = ref(false);
 const editingAnagrafica = ref(false);
+const showDeleteConfirmModal = ref(false);
+const packageToDelete = ref(null);
 
 // Form Anagrafica
 const anagraficaForm = ref({
@@ -754,18 +811,36 @@ const openCreatePackage = () => {
 };
 
 
-// ✅ Pacchetto Attivo (primo ATTIVO con ore residue > 0, ordinato per dataInizio)
+// ✅ Helper per verificare se un pacchetto è CHIUSO
+// Un pacchetto è chiuso se è PAGATO E (ESAURITO O SCADUTO)
+const isPacchettoClosed = (pkg) => {
+  const isPagato = parseFloat(pkg.importoResiduo || 0) === 0;
+  
+  // Check exhaustion
+  let isEsaurito = false;
+  if (pkg.tipo === 'MENSILE') {
+     isEsaurito = (pkg.giorniResiduo || 0) <= 0;
+  } else {
+     isEsaurito = parseFloat(pkg.oreResiduo || 0) <= 0;
+  }
+
+  // Check expiration
+  const oggi = new Date();
+  const dataScadenza = pkg.dataScadenza ? new Date(pkg.dataScadenza) : null;
+  // Reset hours to compare dates correctly
+  if (dataScadenza) dataScadenza.setHours(23, 59, 59, 999);
+  
+  const isScaduto = dataScadenza && dataScadenza < new Date();
+
+  return isPagato && (isEsaurito || isScaduto);
+};
+
+// ✅ Pacchetto Attivo (primo NON CHIUSO, ordinato per dataInizio)
 const pacchettoAttivo = computed(() => {
   if (!student.value?.pacchetti) return null;
   
   const pacchetti = student.value.pacchetti
-    .filter(p => {
-      const hasAttivoState = p.stati?.includes('ATTIVO');
-      const hasResiduo = p.tipo === 'MENSILE' 
-        ? p.giorniResiduo > 0 
-        : p.oreResiduo > 0;
-      return hasAttivoState && hasResiduo;
-    })
+    .filter(p => !isPacchettoClosed(p))
     .sort((a, b) => new Date(a.dataInizio) - new Date(b.dataInizio));
   
   return pacchetti.length > 0 ? pacchetti[0] : null;
@@ -799,30 +874,14 @@ const filteredLessons = computed(() => {
   return lessons.sort((a, b) => new Date(b.lesson.data) - new Date(a.lesson.data));
 });
 
-// Tutti pagamenti
-const allPayments = computed(() => {
-  if (!student.value?.pacchetti) return [];
+// allPayments RIMOSSO (non più necessario come tab separato)
 
-  const payments = [];
-  student.value.pacchetti.forEach(pkg => {
-    if (pkg.pagamenti) {
-      payments.push(...pkg.pagamenti.map(p => ({
-        ...p,
-        packageId: pkg.id,
-        packageNome: pkg.nome,
-      })));
-    }
-  });
-
-  return payments.sort((a, b) => new Date(b.dataPagamento) - new Date(a.dataPagamento));
-});
-
-// Tutti i pacchetti ATTIVI
+// Tutti i pacchetti APERTI (non chiusi)
 const pacchettiAttivi = computed(() => {
   if (!student.value?.pacchetti) return [];
   
   return student.value.pacchetti
-    .filter(p => p.stati?.includes('ATTIVO'))
+    .filter(p => !isPacchettoClosed(p))
     .sort((a, b) => new Date(a.dataInizio) - new Date(b.dataInizio));
 });
 
@@ -862,36 +921,88 @@ const loadStudent = async () => {
   }
 };
 
+// ✅ Carica storico lezioni
+const fetchHistoryLessons = async (reset = false) => {
+  if (reset) {
+    lessonsPage.value = 1;
+    historyLessons.value = [];
+  }
+  lessonsLoading.value = true;
+  try {
+    const params = {
+      studentId: student.value.id,
+      page: lessonsPage.value,
+      limit: 20,
+      dataInizio: lessonFilterStart.value || undefined,
+      dataFine: lessonFilterEnd.value || undefined,
+    };
+    // Usa lessonsAPI.getAll (che chiama /api/lessons)
+    const response = await lessonsAPI.getAll(params);
+    
+    if (reset) {
+      historyLessons.value = response.data.lessons;
+    } else {
+      historyLessons.value.push(...response.data.lessons);
+    }
+    lessonsTotal.value = response.data.pagination.total;
+  } catch (error) {
+    console.error('Errore caricamento storico lezioni:', error);
+  } finally {
+    lessonsLoading.value = false;
+  }
+};
+
+const loadMoreLessons = () => {
+  lessonsPage.value++;
+  fetchHistoryLessons();
+};
+
+// Watchers
+watch([lessonFilterStart, lessonFilterEnd], () => {
+  fetchHistoryLessons(true);
+});
+
+watch(storicoTab, (newVal) => {
+  if (newVal === 'lezioni' && historyLessons.value.length === 0) {
+    fetchHistoryLessons(true);
+  }
+});
+
 // Verifica se è il pacchetto in uso (più vecchio ATTIVO con ore > 0)
 const isPacchettoInUso = (pkg) => {
   return pacchettoAttivo.value?.id === pkg.id;
 };
 
-// Calcola ore perse per pacchetto
+// Calcola ore perse dinamicamente per un singolo pacchetto
 const getPackageLostHours = (pkg) => {
   const isScaduto = pkg.stati?.includes('SCADUTO');
   const isEsaurito = pkg.stati?.includes('ESAURITO');
 
+  // ✅ Se SCADUTO o ESAURITO: usa valore dal database
   if (isScaduto || isEsaurito) {
     return parseFloat(pkg.orePerse || 0);
   }
 
+  // ✅ CALCOLO DINAMICO per pacchetti MENSILI ATTIVI
   if (pkg.tipo === 'MENSILE') {
     const giorniAcquistati = parseFloat(pkg.giorniAcquistati || 0);
     const giorniResidui = parseFloat(pkg.giorniResiduo || 0);
     const giorniUsati = giorniAcquistati - giorniResidui;
+
     const oreAcquistate = parseFloat(pkg.oreAcquistate || 0);
     const oreResiduo = parseFloat(pkg.oreResiduo || 0);
     const oreUsate = oreAcquistate - oreResiduo;
+
     const orarioGiornaliero = parseFloat(pkg.orarioGiornaliero || 3);
 
+    // ✅ FORMULA: (giorniUsati × orarioGiornaliero) - oreUsate
     const oreTeoriche = giorniUsati * orarioGiornaliero;
     const orePerse = oreTeoriche - oreUsate;
 
     return Math.max(0, orePerse);
+  } else {
+    return 0;
   }
-
-  return 0;
 };
 
 // Calcola ore effettive rimanenti
@@ -927,13 +1038,13 @@ const getProgressText = (pkg) => {
   return `${residui.toFixed(1)} / ${totale.toFixed(1)} ore rimanenti`;
 };
 
+
 // Badge stati
 const getStatoBadgeClass = (stato) => {
   const map = {
     'ATTIVO': 'stato-attivo',
     'SCADUTO': 'stato-scaduto',
     'ESAURITO': 'stato-esaurito',
-    'IN_SCADENZA': 'stato-in-scadenza',
     'ORE_NEGATIVE': 'stato-ore-negative',
     'PAGATO': 'stato-pagato',
     'DA_PAGARE': 'stato-da-pagare',
@@ -946,7 +1057,6 @@ const getStatoLabel = (stato) => {
     'ATTIVO': 'Attivo',
     'SCADUTO': 'Scaduto',
     'ESAURITO': 'Esaurito',
-    'IN_SCADENZA': 'In Scadenza',
     'ORE_NEGATIVE': 'Ore Negative',
     'PAGATO': 'Pagato',
     'DA_PAGARE': 'Da Pagare',
@@ -2026,10 +2136,6 @@ onMounted(() => {
   color: #fbbf24;
 }
 
-.stato-in-scadenza {
-  background: rgba(251, 146, 60, 0.15);
-  color: #fb923c;
-}
 
 .stato-ore-negative {
   background: rgba(239, 68, 68, 0.15);
@@ -2840,5 +2946,253 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+/* ✅ NUOVO: CSS per Storico Pacchetti (Mancante) */
+.packages-list-storico {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.package-card-storico {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.package-card-storico:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-color: #d1d5db;
+}
+
+.package-history-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.btn-icon-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-icon-action:hover {
+  background: #e5e7eb;
+}
+
+.btn-icon-action.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.package-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.package-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.package-card-body {
+  padding: 20px;
+}
+
+.package-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #6b7280;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.stat-value.success {
+  color: #2dce89;
+}
+
+.stat-value.danger {
+  color: #f5365c;
+}
+
+.stat-value .highlight {
+  color: #5e72e4;
+  font-weight: 700;
+}
+
+/* ✅ NUOVO: CSS per Storico Pacchetti Compatto */
+.package-payments-compact {
+  margin-top: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.payments-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.payments-list-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.payment-row-compact {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto auto;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.payment-row-compact:last-child {
+  border-bottom: none;
+}
+
+.payment-row-compact .date {
+  color: #6b7280;
+  font-family: monospace;
+}
+
+.payment-row-compact .type {
+  font-weight: 500;
+  color: #374151;
+}
+
+.payment-row-compact .amount {
+  font-weight: 600;
+  color: #111827;
+}
+
+.payment-row-compact .method {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  color: #4b5563;
+}
+
+.btn-delete-payment-compact {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.btn-delete-payment-compact:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.no-payments-compact {
+  font-size: 13px;
+  color: #9ca3af;
+  font-style: italic;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ✅ NUOVO: CSS per Storico Lezioni (Filtri e Load More) */
+.filter-section {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 24px;
+  background: white;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.filter-input {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 150px;
+}
+
+.loading-more {
+  text-align: center;
+  padding: 20px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.btn-load-more {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 20px;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #374151;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-load-more:hover {
+  background: #f9fafb;
+  border-color: #5e72e4;
+  color: #5e72e4;
+}
+
 </style>
-test

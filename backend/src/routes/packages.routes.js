@@ -23,6 +23,5 @@ router.get('/:id', controller.getPackageById);
 router.post('/', requireRole(['ADMIN']), validation, controller.createPackage);
 router.put('/:id', requireRole(['ADMIN']), controller.updatePackage);
 router.delete('/:id', requireRole(['ADMIN']), controller.deletePackage);
-router.patch('/:id/states', requireRole(['ADMIN']), controller.updatePackageStates);
 
 module.exports = router;

@@ -208,29 +208,31 @@ const createLesson = async (req, res, next) => {
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // Trova pacchetto attivo
-        // ✅ LOGICA CORRETTA: Escludi solo pacchetti SCADUTI o ESAURITI
-            // ✅ VERSIONE CORRETTA con NOT
-            const pacchetto = await tx.package.findFirst({
-              where: {
-                studentId: studentId,
-                stati: {
-                  has: 'ATTIVO', // Deve avere ATTIVO
-                },
-                // ✅ E NON deve avere questi stati
-                NOT: [
-                  { stati: { has: 'SCADUTO' } },
-                  { stati: { has: 'ESAURITO' } },
-                  { stati: { has: 'PAG_SOSPESO' } },
-                ],
-              },
-              orderBy: { createdAt: 'asc' }, // Più vecchio prima
-            });
+        // Trova pacchetto valido (non chiuso)
+        // ✅ LOGICA AGGIORNATA: Prendi tutti i pacchetti non sospesi e filtra via quelli chiusi
+        const candidatePackages = await tx.package.findMany({
+          where: {
+            studentId: studentId,
+            NOT: [
+              { stati: { has: 'PAG_SOSPESO' } },
+            ],
+          },
+          orderBy: { createdAt: 'asc' }, // Più vecchio prima
+        });
 
+        // Trova il primo pacchetto non chiuso
+        const { isPacchettoClosed } = require('../utils/packageStates');
+        let pacchetto = null;
 
+        for (const pkg of candidatePackages) {
+          if (!isPacchettoClosed(pkg)) {
+            pacchetto = pkg;
+            break;
+          }
+        }
 
         if (!pacchetto) {
-          throw new Error(`Nessun pacchetto attivo trovato per studente ${studentId}`);
+          throw new Error(`Nessun pacchetto valido trovato per studente ${studentId} (tutti i pacchetti sono chiusi o sospesi)`);
         }
 
         // ✅ Verifica se studente ha già lezioni in questa data
@@ -298,7 +300,7 @@ const createLesson = async (req, res, next) => {
 
     // ✅ STEP 3: Aggiorna stati pacchetti
     for (const student of result.studentiAggiornati) {
-      await updatePackageStates(prisma, student.packageId);
+      await updatePackageStates(student.packageId);
     }
 
     // ✅ STEP 4: Recupera lezione completa
@@ -406,28 +408,29 @@ const updateLesson = async (req, res, next) => {
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // ✅ LOGICA CORRETTA: Escludi solo pacchetti SCADUTI o ESAURITI
-          // ✅ VERSIONE CORRETTA con NOT
-            const pacchetto = await tx.package.findFirst({
-              where: {
-                studentId: studentId,
-                stati: {
-                  has: 'ATTIVO', // Deve avere ATTIVO
-                },
-                // ✅ E NON deve avere questi stati
-                NOT: [
-                  { stati: { has: 'SCADUTO' } },
-                  { stati: { has: 'ESAURITO' } },
-                  { stati: { has: 'PAG_SOSPESO' } },
-                ],
-              },
-              orderBy: { createdAt: 'asc' }, // Più vecchio prima
-            });
+        // ✅ LOGICA AGGIORNATA: Prendi tutti i pacchetti non sospesi e filtra via quelli chiusi
+        const candidatePackages = await tx.package.findMany({
+          where: {
+            studentId: studentId,
+            NOT: [
+              { stati: { has: 'PAG_SOSPESO' } },
+            ],
+          },
+          orderBy: { createdAt: 'asc' }, // Più vecchio prima
+        });
 
+        const { isPacchettoClosed } = require('../utils/packageStates');
+        let pacchetto = null;
 
+        for (const pkg of candidatePackages) {
+          if (!isPacchettoClosed(pkg)) {
+            pacchetto = pkg;
+            break;
+          }
+        }
 
         if (!pacchetto) {
-          console.warn(`Nessun pacchetto attivo per studente ${studentId}`);
+          console.warn(`Nessun pacchetto valido per studente ${studentId}`);
           continue;
         }
 
@@ -461,7 +464,7 @@ const updateLesson = async (req, res, next) => {
     const uniquePackageIds = [...new Set(allPackageIds)];
 
     for (const pkgId of uniquePackageIds) {
-      await updatePackageStates(prisma, pkgId);
+      await updatePackageStates(pkgId);
     }
 
     // Recupera lezione aggiornata
@@ -546,7 +549,7 @@ const deleteLesson = async (req, res, next) => {
 
     // ✅ Aggiorna stati pacchetti
     for (const student of lesson.lessonStudents) {
-      await updatePackageStates(prisma, student.packageId);
+      await updatePackageStates(student.packageId);
     }
 
     res.json({
@@ -651,7 +654,7 @@ const deleteLessonsByTutorAndDate = async (req, res, next) => {
         if (!pacchetto) continue;
 
         const nuoveOreResiduo = parseFloat(pacchetto.oreResiduo) + studentData.oreRipristinare;
-        const nuoviGiorniResiduo = pacchetto.giorniResiduo 
+        const nuoviGiorniResiduo = pacchetto.giorniResiduo
           ? parseInt(pacchetto.giorniResiduo) + studentData.giorniRipristinare
           : null;
 
@@ -684,7 +687,7 @@ const deleteLessonsByTutorAndDate = async (req, res, next) => {
 
     // Aggiorna stati pacchetti
     for (const packageId of affectedPackageIds) {
-      await updatePackageStates(prisma, packageId);
+      await updatePackageStates(packageId);
     }
 
     res.json({
@@ -768,7 +771,7 @@ const getCalendarDays = async (req, res, next) => {
 
     lessons.forEach(lesson => {
       const dataStr = lesson.data.toISOString().split('T')[0];
-      
+
       if (!giorniMap.has(dataStr)) {
         giorniMap.set(dataStr, {
           data: dataStr,
@@ -782,11 +785,11 @@ const getCalendarDays = async (req, res, next) => {
       const giorno = giorniMap.get(dataStr);
       giorno.lezioni.push(lesson);
       giorno.numeroLezioni++;
-      
+
       lesson.lessonStudents?.forEach(ls => {
         giorno.studentiUnici.add(ls.student.id);
       });
-      
+
       giorno.compensoTotale += parseFloat(lesson.compensoTutor || 0);
     });
 

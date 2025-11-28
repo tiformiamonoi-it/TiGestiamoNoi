@@ -34,6 +34,7 @@ model User {
   // Relazioni
   tutorProfile   TutorProfile?
   lessonsAsTutor Lesson[]      @relation("TutorLessons")
+  tutorPayments  TutorPayment[]
   
   @@index([email])
   @@map("users")
@@ -136,7 +137,6 @@ model StandardPackage {
   prezzoStandard Decimal @db.Decimal(10, 2)
   
   // Validità standard (in giorni)
-  durataGiorni Int? // Es: 30, 60, 90
   
   active Boolean @default(true)
   
@@ -399,6 +399,9 @@ model AccountingEntry {
   paymentId String?  @unique
   payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
+  tutorPaymentId String? @unique
+  tutorPayment   TutorPayment? @relation(fields: [tutorPaymentId], references: [id], onDelete: SetNull)
+
   // Metadati
   note String?
   
@@ -433,4 +436,41 @@ model SystemConfig {
 
   @@index([category])
   @@map("system_configs")
+}
+
+
+// ============================================
+// PAGAMENTI TUTOR
+// ============================================
+
+model TutorPayment {
+  id            String        @id @default(cuid())
+  tutorId       String
+  tutor         User          @relation(fields: [tutorId], references: [id])
+  
+  // Mese di riferimento (salvato come primo del mese, es: 2025-11-01)
+  mese          DateTime      
+  
+  importo       Decimal       @db.Decimal(10, 2)
+  
+  dataPagamento DateTime      @default(now())
+  metodo        PaymentMethod @default(BONIFICO)
+  
+  note          String?
+  
+  status        TutorPaymentStatus @default(PAGATO)
+  
+  movimentoContabile AccountingEntry?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("tutor_payments")
+  @@index([tutorId, mese])
+}
+
+enum TutorPaymentStatus {
+  PAGATO
+  PARZIALE
+  PRO_BONO
 }

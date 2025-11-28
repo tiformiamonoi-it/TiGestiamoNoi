@@ -1,0 +1,14 @@
+{
+    "copy4ai.excludePaths": [
+        "backend\\node_modules",
+        "backend\\.gitignore",
+        "backend\\package.json",
+        ".vscode",
+        "frontend\\.vscode",
+        "frontend\\node_modules",
+        "node_modules",
+        "frontend\\.editorconfig",
+        "frontend\\.prettierrc.json",
+        "frontend\\eslint.config.js"
+    ]
+}

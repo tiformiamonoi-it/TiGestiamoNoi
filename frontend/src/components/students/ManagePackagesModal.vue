@@ -136,7 +136,7 @@
                   </div>
                 </div>
 
-                <div v-if="pkg.tipo === 'MENSILE' && pkg.stati?.includes('ATTIVO') && getPackageLostHours(pkg) > 0" class="package-hours-detail">
+                <div v-if="pkg.tipo === 'MENSILE' && getPackageLostHours(pkg) > 0" class="package-hours-detail">
   
                 <!-- Ore Perse -->
                 <div class="hours-detail-item lost">
