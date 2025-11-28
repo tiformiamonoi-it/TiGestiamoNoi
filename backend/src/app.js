@@ -29,25 +29,28 @@ app.use(cors({
 }));
 */
 
-// ✅ CORS aggiornato per Development + Production
+// ✅ CORS per Development + Production
 const allowedOrigins = [
-  'http://localhost:5173',  // Dev locale frontend
-  'https://ti-gestiamo-noi-frontend.vercel.app',  // Production Vercel
-  process.env.FRONTEND_URL  // Dinamico da environment variable
-].filter(Boolean);  // Rimuove eventuali undefined
+  'http://localhost:5173',  // Dev locale
+  'https://ti-gestiamo-noi-frontend.vercel.app',  // Production
+  process.env.FRONTEND_URL  // Dinamico da env var
+].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permette richieste senza origin (Postman, test) o dalla lista allowedOrigins
+    // Permetti richieste senza origin (Postman) o dalla lista
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.error(`❌ CORS blocked origin: ${origin}`);
+      console.error(`❌ CORS blocked: ${origin}`);
       callback(new Error('Non autorizzato da CORS'));
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
