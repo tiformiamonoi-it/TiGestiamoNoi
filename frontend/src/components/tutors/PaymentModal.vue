@@ -34,16 +34,23 @@
                          <option value="PAGATO">Completo</option>
                          <option value="PARZIALE">Parziale</option>
                        </select>
-                       <input 
-                         type="number" 
-                         v-model.number="mese.importo" 
-                         class="amount-input" 
-                         step="0.01"
-                         min="0"
-                       />
-                       <span class="currency">€</span>
+                       <div class="input-wrapper">
+                         <input 
+                           type="number" 
+                           v-model.number="mese.importo" 
+                           class="amount-input" 
+                           :class="{ 'is-invalid': mese.importo > mese.originalImporto }"
+                           step="0.01"
+                           min="0"
+                         />
+                         <span class="currency">€</span>
+                       </div>
+                       <span class="original-amount-label">su {{ mese.originalImporto }}€</span>
                     </div>
                     <span v-else class="month-amount">{{ mese.importo }}€</span>
+                  </div>
+                  <div v-if="mese.selected && mese.importo > mese.originalImporto" class="error-message">
+                    ⚠️ L'importo non può superare il dovuto ({{ mese.originalImporto }}€)
                   </div>
                 </div>
               </div>
@@ -52,8 +59,13 @@
 
           <!-- Totale -->
           <div class="total-section">
-            <span class="total-label">TOTALE DA PAGARE:</span>
-            <span class="total-amount">{{ totaleSelezionato.toFixed(2) }}€</span>
+            <div class="total-row">
+              <span class="total-label">PAGAMENTO:</span>
+              <span class="total-amount">{{ totaleSelezionato.toFixed(2) }}€</span>
+            </div>
+            <div class="total-sub-row" v-if="totaleOriginale > totaleSelezionato">
+               (Totale dovuto originale: {{ totaleOriginale.toFixed(2) }}€)
+            </div>
           </div>
 
           <!-- Form Dati -->
@@ -84,7 +96,7 @@
           </button>
           <button 
             @click="confirmPayment" 
-            :disabled="totaleSelezionato <= 0 || isSubmitting"
+            :disabled="totaleSelezionato <= 0 || isSubmitting || hasErrors"
             class="btn-primary"
           >
             <span v-if="isSubmitting">Salvataggio...</span>
@@ -110,7 +122,7 @@ const isSubmitting = ref(false);
 
 const formData = ref({
   dataPagamento: new Date().toISOString().split('T')[0],
-  metodoPagamento: 'BONIFICO',
+  metodoPagamento: 'CONTANTI',
   note: '',
 });
 
@@ -133,6 +145,21 @@ watch(() => props.tutorsToPay, (newVal) => {
   }
 }, { immediate: true });
 
+// Auto-switch status when amount changes
+watch(pagamenti, (newVal) => {
+  newVal.forEach(p => {
+    p.mesiDettaglio.forEach(m => {
+      if (m.selected) {
+        if (m.importo < m.originalImporto && m.status === 'PAGATO') {
+          m.status = 'PARZIALE';
+        } else if (m.importo >= m.originalImporto && m.status === 'PARZIALE') {
+          m.status = 'PAGATO';
+        }
+      }
+    });
+  });
+}, { deep: true });
+
 const totaleSelezionato = computed(() => {
   let sum = 0;
   pagamenti.value.forEach(p => {
@@ -141,6 +168,22 @@ const totaleSelezionato = computed(() => {
     });
   });
   return sum;
+});
+
+const totaleOriginale = computed(() => {
+  let sum = 0;
+  pagamenti.value.forEach(p => {
+    p.mesiDettaglio.forEach(m => {
+      if (m.selected) sum += Number(m.originalImporto);
+    });
+  });
+  return sum;
+});
+
+const hasErrors = computed(() => {
+  return pagamenti.value.some(p => 
+    p.mesiDettaglio.some(m => m.selected && m.importo > m.originalImporto)
+  );
 });
 
 function formatMese(dateStr) {
@@ -467,5 +510,52 @@ async function confirmPayment() {
 
 .btn-secondary:hover {
   background: #f8f9fa;
+}
+
+.original-amount-label {
+  font-size: 12px;
+  color: #8392ab;
+  white-space: nowrap;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.is-invalid {
+  border-color: #f5365c !important;
+  color: #f5365c;
+}
+
+.error-message {
+  font-size: 11px;
+  color: #f5365c;
+  margin-top: 4px;
+  margin-left: 28px; /* Align with checkbox text roughly */
+}
+
+.total-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* Align right */
+  padding: 16px 0;
+  border-top: 2px solid #e9ecef;
+  border-bottom: 1px solid #e9ecef;
+  margin-bottom: 24px;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.total-sub-row {
+  font-size: 12px;
+  color: #8392ab;
+  margin-top: 4px;
 }
 </style>

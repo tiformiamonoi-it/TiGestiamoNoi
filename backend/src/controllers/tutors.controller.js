@@ -437,7 +437,8 @@ const getTutorDetail = async (req, res, next) => {
           include: {
             student: true
           }
-        }
+        },
+        timeSlot: true, // Include timeSlot for duration calculation
       },
       orderBy: { data: 'desc' }
     });
@@ -523,7 +524,10 @@ const getTutorDetail = async (req, res, next) => {
       stats,
       currentPeriodStats,
       payments,
+      currentPeriodStats,
+      payments,
       students: studentsList,
+      lessons, // Add lessons to response for frontend calculations
     });
 
   } catch (error) {
@@ -576,26 +580,25 @@ async function calcolaStatsTutor(tutorId, periodo) {
     // Best practice: Use UTC for everything.
     const meseStartUTC = new Date(Date.UTC(meseStart.getFullYear(), meseStart.getMonth(), 1));
 
-    const pagamento = await prisma.tutorPayment.findFirst({
+    // Fetch all payments for this month (UTC)
+    const payments = await prisma.tutorPayment.findMany({
       where: {
         tutorId,
         mese: meseStartUTC,
       },
     });
 
-    // Consider paid if payment exists AND status is not 'PARZIALE' (unless we want to show partial as paid?)
-    // User wants "Possibilità di pagare parzialmente".
-    // If partial, it should probably still show in the list but maybe as "Da saldare" in stats?
-    // For now, if payment exists, we don't count it as "Non Pagato" in the strict sense of "Missing Record",
-    // but we might want to return it if it's partial.
-    // Let's stick to: if no payment record, it's unpaid.
+    const totalePagato = payments.reduce((sum, p) => sum + Number(p.importo), 0);
+    const rimanente = compenso.totaleArrotondato - totalePagato;
 
-    if (!pagamento && compenso.totaleArrotondato > 0) {
+    // If there is a remaining amount, add to unpaid list
+    // Note: We use a small epsilon for float comparison safety, though we used Math.floor/Number
+    if (rimanente > 0.01) {
       mesiNonPagati.push({
         date: meseStartUTC, // Return UTC date
-        importo: compenso.totaleArrotondato
+        importo: rimanente
       });
-      totaleDovuto += compenso.totaleArrotondato;
+      totaleDovuto += rimanente;
     }
 
     current.setMonth(current.getMonth() + 1);

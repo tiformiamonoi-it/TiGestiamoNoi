@@ -144,6 +144,9 @@
             @details="handleHistoryDetails"
             @edit="handleHistoryEdit"
             @reset="handleHistoryReset"
+            @delete-payment="handleDeletePayment"
+            @modify-amount="handleModifyAmount"
+            @export="handleHistoryExport"
           />
         </div>
 
@@ -368,19 +371,160 @@ const fullPaymentHistory = computed(() => {
   const payments = tutorStore.currentTutor?.payments || [];
   const unpaid = tutorStore.currentTutor?.currentPeriodStats?.mesiNonPagati || [];
   
-  // Convert unpaid to same structure as payments
-  const unpaidFormatted = unpaid.map(u => ({
-    id: 'unpaid-' + u.date,
-    mese: u.date,
-    importo: u.importo,
-    pagato: false,
-    proBono: false,
-    dataPagamento: null,
-    metodo: null
-  }));
+  // Group by month
+  const historyMap = new Map();
 
-  // Merge and sort by date desc
-  return [...payments, ...unpaidFormatted].sort((a, b) => new Date(b.mese) - new Date(a.mese));
+  // 1. Add existing payments
+  payments.forEach(p => {
+    const monthKey = p.mese; // Assuming 'YYYY-MM-DD' or similar that represents the month
+    if (!historyMap.has(monthKey)) {
+      historyMap.set(monthKey, {
+        id: 'month-' + monthKey,
+        mese: monthKey,
+        totalAmount: 0,
+        paidAmount: 0,
+        remainingAmount: 0,
+        payments: [],
+        status: 'DA_PAGARE'
+      });
+    }
+    const entry = historyMap.get(monthKey);
+    entry.payments.push(p);
+    entry.paidAmount += Number(p.importo);
+  });
+
+  // 2. Add unpaid amounts (remaining)
+  unpaid.forEach(u => {
+    const monthKey = u.date;
+    if (!historyMap.has(monthKey)) {
+      historyMap.set(monthKey, {
+        id: 'month-' + monthKey,
+        mese: monthKey,
+        totalAmount: 0,
+        paidAmount: 0,
+        remainingAmount: 0,
+        payments: [],
+        status: 'DA_PAGARE'
+      });
+    }
+    const entry = historyMap.get(monthKey);
+    entry.remainingAmount += Number(u.importo);
+  });
+
+  // 3. Calculate totals and status
+  const result = Array.from(historyMap.values()).map(entry => {
+    entry.totalAmount = entry.paidAmount + entry.remainingAmount;
+    
+    // Calculate breakdown from lessons
+    // Need to fetch lessons or use store if available. 
+    // Assuming backend now returns 'lessons' in tutorStore.currentTutor.lessons
+    const lessons = tutorStore.currentTutor?.lessons || [];
+    // DEBUG: Check if timeSlot is present
+    console.log('Lessons for breakdown:', lessons);
+    
+    const monthLessons = lessons.filter(l => {
+      const d = new Date(l.data);
+      const entryDate = new Date(entry.mese);
+      return d.getMonth() === entryDate.getMonth() && d.getFullYear() === entryDate.getFullYear();
+    });
+
+    entry.breakdown = {
+      singole: { ore: 0, oreImporto: 0, mezzeOre: 0, mezzeOreImporto: 0 },
+      gruppo: { ore: 0, oreImporto: 0, mezzeOre: 0, mezzeOreImporto: 0 },
+      maxi: { ore: 0, oreImporto: 0, mezzeOre: 0, mezzeOreImporto: 0 }
+    };
+
+    let totalCalculated = 0;
+
+    monthLessons.forEach(l => {
+      const type = l.tipo?.toLowerCase() || 'singola';
+      const amount = Number(l.compensoTutor || 0);
+      
+      // Determine if it's a "Mezza Ora"
+      // Priority 1: Check 'mezzaLezione' flag on students
+      let isHalfHour = false;
+      if (l.lessonStudents && l.lessonStudents.length > 0) {
+        // If any student has mezzaLezione, treat as half hour (especially for Single)
+        if (l.lessonStudents.some(ls => ls.mezzaLezione)) {
+          isHalfHour = true;
+        }
+      }
+
+      // Priority 2: If not set by flag, check TimeSlot duration
+      if (!isHalfHour && l.timeSlot) {
+        const [startH, startM] = l.timeSlot.oraInizio.split(':').map(Number);
+        const [endH, endM] = l.timeSlot.oraFine.split(':').map(Number);
+        const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+        if (durationMinutes <= 45) isHalfHour = true;
+      }
+
+      // Priority 3: Fallback Heuristic based on Amount
+      if (!isHalfHour && !l.timeSlot) {
+         if (type === 'singola' && amount <= 3.0) isHalfHour = true;
+         else if (type === 'gruppo' && amount <= 4.5) isHalfHour = true;
+         else if (type === 'maxi' && amount <= 4.5) isHalfHour = true;
+      }
+
+      if (type === 'singola') {
+        if (isHalfHour) {
+          entry.breakdown.singole.mezzeOre++;
+          entry.breakdown.singole.mezzeOreImporto += amount;
+        } else {
+          entry.breakdown.singole.ore++;
+          entry.breakdown.singole.oreImporto += amount;
+        }
+      } else if (type === 'gruppo') {
+        if (isHalfHour) {
+          entry.breakdown.gruppo.mezzeOre++;
+          entry.breakdown.gruppo.mezzeOreImporto += amount;
+        } else {
+          entry.breakdown.gruppo.ore++;
+          entry.breakdown.gruppo.oreImporto += amount;
+        }
+      } else if (type === 'maxi') {
+        if (isHalfHour) {
+          entry.breakdown.maxi.mezzeOre++;
+          entry.breakdown.maxi.mezzeOreImporto += amount;
+        } else {
+          entry.breakdown.maxi.ore++;
+          entry.breakdown.maxi.oreImporto += amount;
+        }
+      }
+      
+      totalCalculated += amount;
+    });
+
+    // Override totalAmount with calculated floor if no payments exist yet?
+    // Or just use it for the "Total Calcolato" display?
+    // The requirement says "Totale dovuto deve essere la somma... approssimate per difetto".
+    // So we should probably use Math.floor(totalCalculated) as the source of truth for 'totalAmount' if it's not already set by payments?
+    // Actually, 'totalAmount' in history is (paid + remaining). 
+    // If we are building history from scratch (unpaid months), we rely on 'calcolaStatsTutor' from backend.
+    // But here we are recalculating on frontend for the breakdown.
+    // Let's trust the backend 'remainingAmount' for the main table, but show the detailed calculation in the popup.
+    // Wait, if the backend doesn't floor it, we might have a mismatch.
+    // Backend 'calcolaCompensoMese' uses 'Math.floor(totaleGrezzo)'. So it IS floored.
+    // So frontend calculation should match backend.
+    
+    entry.calculatedTotal = Math.floor(totalCalculated);
+
+    if (entry.paidAmount > 0 && entry.remainingAmount > 0.01) {
+      entry.status = 'PARZIALE';
+    } else if (entry.remainingAmount <= 0.01 && entry.paidAmount > 0) {
+      entry.status = 'PAGATO';
+      // Check if any payment was pro-bono
+      if (entry.payments.some(p => p.proBono || p.status === 'PRO_BONO')) {
+        entry.status = 'PRO_BONO'; // Or handle mixed status
+      }
+    } else {
+      entry.status = 'DA_PAGARE';
+    }
+    
+    return entry;
+  });
+
+  // Sort by date desc
+  return result.sort((a, b) => new Date(b.mese) - new Date(a.mese));
 });
 
 function handleHistoryPay(item) {
@@ -410,6 +554,25 @@ async function handleHistoryReset(item) {
   } catch (e) {
     alert('Errore eliminazione pagamento: ' + e.message);
   }
+}
+
+async function handleDeletePayment(payment) {
+  if (!confirm(`Sei sicuro di voler eliminare il pagamento di ${payment.importo}€ del ${new Date(payment.dataPagamento).toLocaleDateString()}?`)) return;
+
+  try {
+    await tutorStore.deletePayment(payment.id);
+    await fetchTutor();
+  } catch (e) {
+    alert('Errore eliminazione pagamento: ' + e.message);
+  }
+}
+
+function handleModifyAmount(item) {
+  alert('Funzionalità di modifica importo manuale in arrivo. Per ora, modifica le lezioni associate per ricalcolare il totale.');
+}
+
+function handleHistoryExport(item) {
+  alert('Funzionalità Export in arrivo... Porterà alla pagina dedicata agli export.');
 }
 
 async function handleEditPaymentSave(updatedPayment) {
