@@ -272,6 +272,7 @@
 </template>
 
 <script setup>
+// Vue 3 Composition API
 import { ref, computed, onMounted } from 'vue';
 import { calendarAPI, timeslotsAPI, tutorsAPI, lessonsAPI } from '@/services/api';
 import CreateLessonModal from '@/components/calendar/CreateLessonModal.vue';
@@ -403,6 +404,17 @@ const loadTimeSlots = async () => {
       { id: 'fallback-2', start: '16:30:00', end: '17:30:00', label: '16:30-17:30', isStandard: true },
       { id: 'fallback-3', start: '17:30:00', end: '18:30:00', label: '17:30-18:30', isStandard: true },
     ];
+  }
+};
+
+const loadTutors = async () => {
+  try {
+    const response = await tutorsAPI.getAll();
+    tutors.value = response.data.data || [];
+    console.log('✅ Tutor caricati:', tutors.value.length);
+  } catch (error) {
+    console.error('Errore caricamento tutor:', error);
+    tutors.value = [];
   }
 };
 
@@ -628,18 +640,6 @@ const handleTutorAdded = () => {
   showAddTutorModal.value = false;
   selectedDateForTutor.value = null;
   loadGiorni(); // Ricarica calendario
-};
-
-
-// ✅ CARICA LISTA TUTOR
-const loadTutors = async () => {
-  try {
-    const response = await tutorsAPI.getAll();
-    tutors.value = response.data.tutors || [];
-    console.log('✅ Tutor caricati:', tutors.value.length);
-  } catch (error) {
-    console.error('Errore caricamento tutor:', error);
-  }
 };
 
 const openCreateModal = (date = null) => {

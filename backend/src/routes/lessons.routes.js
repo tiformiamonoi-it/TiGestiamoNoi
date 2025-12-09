@@ -12,10 +12,14 @@ const {
   createLesson,
   updateLesson,
   deleteLesson,
-  deleteLessonsByTutorAndDate, // ✅ AGGIUNTA QUI
+  deleteLessonsByTutorAndDate,
   getCalendarDays,
   getAvailableStudents,
 } = require('../controllers/lessons.controller');
+const { authenticateToken } = require('../middleware/auth');
+
+// Tutte le route protette
+router.use(authenticateToken);
 
 // ============================================
 // ✅ CALENDARIO (PRIMA - route statiche)

@@ -13,7 +13,6 @@
             v-model="credentials.email"
             type="email"
             required
-            placeholder="admin@tiformiamonoi.it"
             :disabled="loading"
           />
         </div>
@@ -25,7 +24,6 @@
             v-model="credentials.password"
             type="password"
             required
-            placeholder="••••••••"
             :disabled="loading"
           />
         </div>
@@ -38,12 +36,6 @@
           {{ loading ? 'Accesso in corso...' : 'Accedi' }}
         </button>
       </form>
-
-      <div class="demo-credentials">
-        <p><strong>Credenziali demo:</strong></p>
-        <p>Email: admin@tiformiamonoi.it</p>
-        <p>Password: admin123</p>
-      </div>
     </div>
   </div>
 </template>
@@ -179,15 +171,4 @@ input:disabled {
   text-align: center;
 }
 
-.demo-credentials {
-  padding: 16px;
-  background: #f5f5f5;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #666;
-}
-
-.demo-credentials p {
-  margin: 4px 0;
-}
 </style>

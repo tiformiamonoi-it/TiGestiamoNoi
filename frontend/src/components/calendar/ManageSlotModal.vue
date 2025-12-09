@@ -60,16 +60,6 @@
                 </div>
 
                 <div class="student-actions">
-                  <!-- Checkbox Mezza Lezione -->
-                  <label class="checkbox-label">
-                    <input
-                      type="checkbox"
-                      v-model="student.mezzaLezione"
-                      @change="updateCalculations"
-                    />
-                    <span>½ Lezione</span>
-                  </label>
-
                   <!-- Bottone Rimuovi -->
                   <button
                     @click="removeStudent(index)"
@@ -97,6 +87,18 @@
           <div class="options-section">
             <h3 class="section-title">⚙️ Opzioni</h3>
 
+            <!-- Mezza Lezione Globale -->
+            <label class="checkbox-option">
+              <input
+                type="checkbox"
+                v-model="mezzaLezioneGlobale"
+                :disabled="students.length === 0"
+                @change="onMezzaLezioneChange"
+              />
+              <span>½ Mezza Lezione (applicata a tutti gli studenti dello slot)</span>
+            </label>
+
+            <!-- Forza Gruppo -->
             <label class="checkbox-option">
               <input
                 type="checkbox"
@@ -227,6 +229,7 @@ const existingLesson = ref(null);
 
 const students = ref([]);
 const forzaGruppo = ref(false);
+const mezzaLezioneGlobale = ref(false); // ✅ NUOVA: checkbox globale per mezza lezione
 const note = ref('');
 
 const showStudentSearch = ref(false);
@@ -251,7 +254,8 @@ const calculatedType = computed(() => {
 // Calcolo compenso
 const calculatedCompenso = computed(() => {
   const tipo = calculatedType.value;
-  const hasMezza = students.value.some(s => s.mezzaLezione);
+  // ✅ Usa la checkbox globale invece che controllare ogni studente
+  const hasMezza = mezzaLezioneGlobale.value;
 
   const tariffe = {
     SINGOLA: hasMezza ? 2.50 : 5.00,
@@ -289,13 +293,18 @@ const loadExistingLesson = async () => {
       forzaGruppo.value = lesson.forzaGruppo || false;
       note.value = lesson.note || '';
 
-      // Popola studenti
+      // Popola studenti e determina lo stato globale della mezza lezione
       students.value = lesson.lessonStudents.map(ls => ({
         id: ls.student.id,
         firstName: ls.student.firstName,
         lastName: ls.student.lastName,
         mezzaLezione: ls.mezzaLezione || false,
       }));
+      
+      // ✅ Imposta checkbox globale dal primo studente (tutti devono avere lo stesso valore)
+      if (students.value.length > 0) {
+        mezzaLezioneGlobale.value = students.value[0].mezzaLezione;
+      }
     }
   } catch (error) {
     console.error('Errore caricamento lezione:', error);
@@ -313,7 +322,7 @@ const addStudents = (newStudents) => {
         id: student.id,
         firstName: student.firstName,
         lastName: student.lastName,
-        mezzaLezione: false,
+        mezzaLezione: mezzaLezioneGlobale.value, // ✅ Usa il valore globale
         tempId: Date.now() + Math.random(), // ID temporaneo per v-for key
       });
     }
@@ -326,6 +335,15 @@ const addStudents = (newStudents) => {
 // Rimuovi studente
 const removeStudent = (index) => {
   students.value.splice(index, 1);
+  updateCalculations();
+};
+
+// ✅ NUOVA: Gestisce cambio mezza lezione globale
+const onMezzaLezioneChange = () => {
+  // Applica il valore globale a TUTTI gli studenti
+  students.value.forEach(student => {
+    student.mezzaLezione = mezzaLezioneGlobale.value;
+  });
   updateCalculations();
 };
 

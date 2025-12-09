@@ -6,12 +6,10 @@ const {
   createTimeSlot,
   toggleTimeSlot,
 } = require('../controllers/timeslots.controller');
-
-// Middleware autenticazione (assumo tu l'abbia già)
-const { protect } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 
 // Tutte le route protette
-//router.use(protect);
+router.use(authenticateToken);
 
 // GET /api/timeslots - Lista slot orari
 router.get('/', getTimeSlots);

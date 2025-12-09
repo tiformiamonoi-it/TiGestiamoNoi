@@ -394,6 +394,8 @@ const updateLesson = async (req, res, next) => {
     const compensoTutor = calcolaCompensoTutor(tipoLezione, primaMezzaLezione);
 
     // ✅ STEP 3: Scala ore nuovi studenti
+    const newPackageIds = []; // Track new package IDs for state updates
+
     await prisma.$transaction(async (tx) => {
       await tx.lesson.update({
         where: { id },
@@ -453,15 +455,18 @@ const updateLesson = async (req, res, next) => {
             mezzaLezione,
           },
         });
+
+        // Track the package ID for state updates
+        newPackageIds.push(pacchetto.id);
       }
     });
 
     // ✅ STEP 4: Aggiorna stati pacchetti
     const allPackageIds = [
       ...lessonEsistente.lessonStudents.map(s => s.packageId),
-      ...studenti.map(s => s.packageId),
+      ...newPackageIds, // Use tracked package IDs instead of undefined values
     ];
-    const uniquePackageIds = [...new Set(allPackageIds)];
+    const uniquePackageIds = [...new Set(allPackageIds)].filter(id => id !== undefined);
 
     for (const pkgId of uniquePackageIds) {
       await updatePackageStates(pkgId);

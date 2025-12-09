@@ -295,9 +295,10 @@ const availableExtraSlots = computed(() => {
 const loadTutors = async () => {
   try {
     const response = await tutorsAPI.getAll();
-    tutors.value = response.data.tutors || [];
+    tutors.value = response.data.data || [];
+    console.log('✅ Modal - Tutor caricati:', tutors.value.length);
   } catch (error) {
-    console.error('Errore caricamento tutor:', error);
+    console.error('❌ Modal - Errore caricamento tutor:', error);
   }
 };
 

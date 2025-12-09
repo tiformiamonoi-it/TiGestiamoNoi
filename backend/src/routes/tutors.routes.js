@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const tutorsController = require('../controllers/tutors.controller');
+const { authenticateToken } = require('../middleware/auth');
+
+// Tutte le route protette
+router.use(authenticateToken);
 
 // GET /api/tutors - Lista tutor con filtri
 router.get('/', tutorsController.getTutors);
