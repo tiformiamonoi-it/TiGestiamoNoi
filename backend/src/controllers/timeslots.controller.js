@@ -15,7 +15,7 @@ const getTimeSlots = async (req, res, next) => {
     const { attivo } = req.query;
 
     const where = {};
-    
+
     // Filtro solo slot attivi (default: tutti)
     if (attivo !== undefined) {
       where.active = attivo === 'true';
@@ -64,7 +64,7 @@ const createTimeSlot = async (req, res, next) => {
       data: {
         oraInizio,
         oraFine,
-        active,
+        active: attivo,
       },
     });
 
@@ -102,8 +102,30 @@ const toggleTimeSlot = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/timeslots/:id
+ * Elimina slot orario
+ */
+const deleteTimeSlot = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.timeSlot.delete({
+      where: { id },
+    });
+
+    res.json({
+      message: 'Slot orario eliminato con successo',
+    });
+  } catch (error) {
+    console.error('Errore eliminazione time slot:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getTimeSlots,
   createTimeSlot,
   toggleTimeSlot,
+  deleteTimeSlot,
 };

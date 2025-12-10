@@ -104,6 +104,98 @@ const getTutors = async (req, res, next) => {
 };
 
 // ============================================
+// CREATE TUTOR
+// ============================================
+
+/**
+ * POST /api/tutors
+ * Crea un nuovo tutor
+ */
+const createTutor = async (req, res, next) => {
+  try {
+    const { firstName, lastName, email, phone, active = true } = req.body;
+
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'Nome e cognome sono obbligatori' });
+    }
+
+    // Check if email already exists (only if email is provided)
+    if (email) {
+      const existingUser = await prisma.user.findUnique({
+        where: { email }
+      });
+
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email già in uso' });
+      }
+    }
+
+    // Create user with TUTOR role and TutorProfile
+    const newTutor = await prisma.user.create({
+      data: {
+        firstName,
+        lastName,
+        email: email || `tutor_${Date.now()}@placeholder.local`, // Email placeholder se non fornita
+        phone: phone || null,
+        role: 'TUTOR',
+        active,
+        password: '', // Empty password - tutors don't login via password
+        tutorProfile: {
+          create: {
+            materie: []
+          }
+        }
+      },
+      include: {
+        tutorProfile: true
+      }
+    });
+
+    res.status(201).json(newTutor);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// CHECK DUPLICATE TUTOR
+// ============================================
+
+/**
+ * GET /api/tutors/check-duplicate
+ * Verifica se esiste già un tutor con lo stesso nome
+ */
+const checkDuplicateTutor = async (req, res, next) => {
+  try {
+    const { firstName, lastName } = req.query;
+
+    if (!firstName || !lastName) {
+      return res.json({ exists: false });
+    }
+
+    const existingTutor = await prisma.user.findFirst({
+      where: {
+        role: 'TUTOR',
+        firstName: { equals: firstName, mode: 'insensitive' },
+        lastName: { equals: lastName, mode: 'insensitive' }
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true
+      }
+    });
+
+    res.json({
+      exists: !!existingTutor,
+      tutor: existingTutor
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
 // GET TUTOR STATS (Dashboard)
 // ============================================
 
@@ -659,10 +751,12 @@ function getDateRange(periodo) {
 
 module.exports = {
   getTutors,
+  createTutor,
   getTutorStats,
   getTutorDetail,
   updateTutor,
   payTutors,
   updatePayment,
   deletePayment,
+  checkDuplicateTutor,
 };

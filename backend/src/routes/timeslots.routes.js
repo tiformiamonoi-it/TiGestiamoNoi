@@ -5,8 +5,9 @@ const {
   getTimeSlots,
   createTimeSlot,
   toggleTimeSlot,
+  deleteTimeSlot,
 } = require('../controllers/timeslots.controller');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 // Tutte le route protette
 router.use(authenticateToken);
@@ -15,9 +16,12 @@ router.use(authenticateToken);
 router.get('/', getTimeSlots);
 
 // POST /api/timeslots - Crea slot (solo admin)
-router.post('/', createTimeSlot);
+router.post('/', requireRole(['ADMIN']), createTimeSlot);
 
 // PATCH /api/timeslots/:id - Attiva/disattiva
-router.patch('/:id', toggleTimeSlot);
+router.patch('/:id', requireRole(['ADMIN']), toggleTimeSlot);
+
+// DELETE /api/timeslots/:id - Elimina slot
+router.delete('/:id', requireRole(['ADMIN']), deleteTimeSlot);
 
 module.exports = router;

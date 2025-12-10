@@ -9,6 +9,12 @@ router.use(authenticateToken);
 // GET /api/tutors - Lista tutor con filtri
 router.get('/', tutorsController.getTutors);
 
+// POST /api/tutors - Crea nuovo tutor
+router.post('/', tutorsController.createTutor);
+
+// GET /api/tutors/check-duplicate - Verifica duplicati
+router.get('/check-duplicate', tutorsController.checkDuplicateTutor);
+
 // GET /api/tutors/stats - Statistiche dashboard
 router.get('/stats', tutorsController.getTutorStats);
 

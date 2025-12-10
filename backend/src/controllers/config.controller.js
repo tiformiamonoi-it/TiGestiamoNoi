@@ -49,20 +49,26 @@ const getConfigByKey = async (req, res, next) => {
 
 /**
  * PUT /api/config/:key
- * Aggiorna configurazione
+ * Aggiorna configurazione (o crea se non esiste - upsert)
  */
 const updateConfig = async (req, res, next) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
 
-    if (!value) {
+    if (value === undefined || value === null) {
       return res.status(400).json({ error: 'Value è obbligatorio' });
     }
 
-    const config = await prisma.systemConfig.update({
+    const config = await prisma.systemConfig.upsert({
       where: { key },
-      data: { value },
+      update: { value: String(value) },
+      create: {
+        key,
+        value: String(value),
+        category: req.body.category || 'generale',
+        description: req.body.description || null
+      },
     });
 
     res.json({
@@ -74,8 +80,64 @@ const updateConfig = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/config
+ * Crea nuova configurazione
+ */
+const createConfig = async (req, res, next) => {
+  try {
+    const { key, value, category, description } = req.body;
+
+    if (!key || value === undefined) {
+      return res.status(400).json({ error: 'Key e value sono obbligatori' });
+    }
+
+    // Verifica che non esista già
+    const existing = await prisma.systemConfig.findUnique({ where: { key } });
+    if (existing) {
+      return res.status(400).json({ error: 'Configurazione con questa chiave esiste già' });
+    }
+
+    const config = await prisma.systemConfig.create({
+      data: {
+        key,
+        value: String(value),
+        category: category || 'generale',
+        description: description || null,
+      },
+    });
+
+    res.status(201).json({
+      message: 'Configurazione creata con successo',
+      config,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/config/:key
+ * Elimina configurazione
+ */
+const deleteConfig = async (req, res, next) => {
+  try {
+    const { key } = req.params;
+
+    await prisma.systemConfig.delete({
+      where: { key },
+    });
+
+    res.json({ message: 'Configurazione eliminata con successo' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getConfigs,
   getConfigByKey,
   updateConfig,
+  createConfig,
+  deleteConfig,
 };

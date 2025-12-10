@@ -13,6 +13,8 @@ router.get('/', controller.getConfigs);
 router.get('/:key', controller.getConfigByKey);
 
 // Solo admin può modificare
+router.post('/', requireRole(['ADMIN']), controller.createConfig);
 router.put('/:key', requireRole(['ADMIN']), controller.updateConfig);
+router.delete('/:key', requireRole(['ADMIN']), controller.deleteConfig);
 
 module.exports = router;

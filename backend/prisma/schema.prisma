@@ -32,9 +32,11 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relazioni
-  tutorProfile   TutorProfile?
-  lessonsAsTutor Lesson[]      @relation("TutorLessons")
-  tutorPayments  TutorPayment[]
+  tutorProfile        TutorProfile?
+  lessonsAsTutor      Lesson[]           @relation("TutorLessons")
+  tutorPayments       TutorPayment[]
+  tutorAvailabilities TutorAvailability[]
+  bookingAssignments  Booking[]          @relation("BookingAssignments")
   
   @@index([email])
   @@map("users")
@@ -98,8 +100,8 @@ model Student {
   
   active Boolean @default(true)
   note   String?
-  referral       String?       // aggiungi
-  bisogniSpeciali String?      // aggiungi
+  referral       String?       // DEPRECATED: usa referredBy relation
+  bisogniSpeciali String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -107,9 +109,33 @@ model Student {
   // Relazioni
   pacchetti Package[]
   lessonStudents LessonStudent[]
+  
+  // Relazioni Referral (many-to-many)
+  referredBy    StudentReferral[] @relation("ReferredStudent")  // Chi mi ha portato
+  referrals     StudentReferral[] @relation("ReferringStudent") // Chi ho portato io
 
   @@index([lastName, firstName])
   @@map("students")
+}
+
+// Relazione Referral tra studenti (many-to-many)
+model StudentReferral {
+  id              String   @id @default(cuid())
+  
+  // Lo studente che è stato portato
+  referredId      String
+  referred        Student  @relation("ReferredStudent", fields: [referredId], references: [id], onDelete: Cascade)
+  
+  // Lo studente che ha portato (referrer)
+  referrerId      String
+  referrer        Student  @relation("ReferringStudent", fields: [referrerId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([referredId, referrerId])
+  @@index([referredId])
+  @@index([referrerId])
+  @@map("student_referrals")
 }
 
 // ============================================
@@ -473,4 +499,69 @@ enum TutorPaymentStatus {
   PAGATO
   PARZIALE
   PRO_BONO
+}
+
+// ============================================
+// PRENOTAZIONI STUDENTI (Pagina Pubblica)
+// ============================================
+
+model Booking {
+  id              String        @id @default(cuid())
+  
+  // Dati studente (non autenticato)
+  studentName     String
+  studentSurname  String
+  studentPhone    String
+  
+  // Prenotazione
+  requestedDate   DateTime      // Data richiesta
+  subjects        String[]      // Array materie selezionate
+  notes           String?       // Note opzionali
+  
+  // Stato
+  status          BookingStatus @default(PENDING)
+  
+  // Assegnazione Tutor (opzionale, compilato da admin in matching)
+  assignedTutorId String?       // ID del tutor assegnato
+  assignedTutor   User?         @relation("BookingAssignments", fields: [assignedTutorId], references: [id])
+  assignedSlot    String?       // Slot orario: "15:30-16:30", "16:30-17:30", "17:30-18:30"
+  assignedAt      DateTime?     // Quando è stato assegnato
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status, requestedDate])
+  @@index([assignedTutorId, requestedDate])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING     // In attesa di conferma
+  CONFIRMED   // Confermata
+  CANCELLED   // Annullata
+  COMPLETED   // Completata
+}
+
+// ============================================
+// DISPONIBILITÀ TUTOR (Pagina Pubblica)
+// ============================================
+
+model TutorAvailability {
+  id          String   @id @default(cuid())
+  
+  // Tutor (relazione con User)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Data di disponibilità
+  date        DateTime // Solo data (inizio giornata)
+  
+  // Note opzionali (es: "Disponibile dalle 15")
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([userId, date]) // Un tutor può avere una sola disponibilità per giorno
+  @@index([date])
+  @@map("tutor_availabilities")
 }
