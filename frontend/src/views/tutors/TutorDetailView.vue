@@ -42,9 +42,15 @@
           </div>
 
           <div class="tutor-contacts">
-            <a :href="`mailto:${tutor.email}`" class="contact-link">📧 {{ tutor.email }}</a>
+            <span v-if="hasEmail(tutor)" class="contact-link">
+              <a :href="`mailto:${tutor.email}`">📧 {{ tutor.email }}</a>
+            </span>
+            <span v-else class="contact-missing">📧 Email non presente</span>
             <span class="separator">•</span>
-            <a :href="`tel:${tutor.phone}`" class="contact-link">📞 {{ tutor.phone || 'N/D' }}</a>
+            <span v-if="hasPhone(tutor)" class="contact-link">
+              <a :href="`tel:${tutor.phone}`">📞 {{ tutor.phone }}</a>
+            </span>
+            <span v-else class="contact-missing">📞 Telefono non presente</span>
           </div>
         </div>
 
@@ -107,11 +113,15 @@
               </div>
               <div class="info-item">
                 <label>Email</label>
-                <div class="value">{{ tutor.email }}</div>
+                <div class="value" :class="{ 'value-missing': !hasEmail(tutor) }">
+                  {{ hasEmail(tutor) ? tutor.email : 'Email non presente' }}
+                </div>
               </div>
               <div class="info-item">
                 <label>Telefono</label>
-                <div class="value">{{ tutor.phone || '-' }}</div>
+                <div class="value" :class="{ 'value-missing': !hasPhone(tutor) }">
+                  {{ hasPhone(tutor) ? tutor.phone : 'Telefono non presente' }}
+                </div>
               </div>
             </div>
           </div>
@@ -292,6 +302,15 @@ async function fetchTutor() {
   } finally {
     loading.value = false;
   }
+}
+
+// Helpers for placeholder detection
+function hasEmail(t) {
+  return t?.email && !t.email.includes('@placeholder.local');
+}
+
+function hasPhone(t) {
+  return t?.phone && t.phone.trim() !== '';
 }
 
 function goToCalendar() {
@@ -726,8 +745,24 @@ async function handleEditPaymentSave(updatedPayment) {
   transition: color 0.2s;
 }
 
-.contact-link:hover {
+.contact-link a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.contact-link:hover,
+.contact-link a:hover {
   color: #5e72e4;
+}
+
+.contact-missing {
+  color: #adb5bd;
+  font-style: italic;
+}
+
+.value-missing {
+  color: #adb5bd;
+  font-style: italic;
 }
 
 /* Quick Actions */

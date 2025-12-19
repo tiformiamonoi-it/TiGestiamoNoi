@@ -37,6 +37,20 @@
           @update:filters="handleFiltersChange"
           @clear="clearFilters"
         />
+        
+        <!-- Toggle Mostra solo attivi -->
+        <div class="toggle-container">
+          <label class="toggle-wrapper">
+            <input 
+              type="checkbox" 
+              v-model="showOnlyActive"
+              @change="handleFiltersChange"
+              class="toggle-input"
+            />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Mostra solo Alunni attivi con almeno un pacchetto</span>
+          </label>
+        </div>
 
         <!-- Tabella -->
         <StudentsTable
@@ -51,10 +65,7 @@
 
       <!-- Tab Pagamenti Annuale -->
       <div v-else class="tab-content">
-        <div class="coming-soon">
-          <h3>📅 Vista Pagamenti Annuale</h3>
-          <p>Calendario GEN-DIC con tutti i pagamenti - In sviluppo</p>
-        </div>
+        <AnnualPaymentsView />
       </div>
 
       <!-- Modal Gestisci Pacchetti -->
@@ -86,6 +97,7 @@ import StudentFilters from '@/components/students/StudentFilters.vue';
 import StudentsTable from '@/components/students/StudentsTable.vue';
 import ManagePackagesModal from '@/components/students/ManagePackagesModal.vue';
 import CreateStudentModal from '@/components/students/CreateStudentModal.vue';
+import AnnualPaymentsView from '@/components/students/AnnualPaymentsView.vue';
 
 
 const router = useRouter();
@@ -116,6 +128,9 @@ const filters = ref({
   oreNegative: false,
   pagamentoSospeso: false,
 });
+
+// Toggle mostra solo attivi (default: true)
+const showOnlyActive = ref(true);
 
 // Modal Pacchetti
 const showManagePackagesModal = ref(false);
@@ -179,6 +194,7 @@ const loadStudents = async (reset = false) => {
       limit: 20,
       offset: (page.value - 1) * 20,
       ...filters.value,
+      active: showOnlyActive.value ? 'true' : undefined,
     };
 
     const response = await studentsAPI.getAll(params);
@@ -364,5 +380,61 @@ const handleStudentSaved = () => {
   margin: 0;
   color: #8392ab;
   font-size: 16px;
+}
+
+/* Toggle Container */
+.toggle-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.toggle-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.toggle-input {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  background: #d1d5db;
+  border-radius: 13px;
+  transition: all 0.3s;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s;
+}
+
+.toggle-input:checked + .toggle-slider {
+  background: linear-gradient(135deg, #5e72e4, #825ee4);
+}
+
+.toggle-input:checked + .toggle-slider::after {
+  transform: translateX(22px);
+}
+
+.toggle-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #374151;
+  padding: 0 8px;
+  
 }
 </style>

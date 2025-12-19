@@ -202,15 +202,33 @@
               </div>
             </div>
 
-            <!-- Sezione Note -->
+            <!-- Sezione Note e BES -->
             <div class="section">
-              <h3 class="section-title">📝 Note</h3>
-              <textarea
-                v-model="formData.note"
-                class="form-textarea"
-                rows="4"
-                placeholder="Eventuali note o informazioni aggiuntive..."
-              ></textarea>
+              <h3 class="section-title">📝 Note e Bisogni Speciali</h3>
+              
+              <div class="form-group">
+                <label class="form-label">Bisogni Speciali / BES (opzionale)</label>
+                <input
+                  v-model="formData.bisogniSpeciali"
+                  type="text"
+                  class="form-input"
+                  placeholder="Es: DSA, discalculia, ADHD..."
+                />
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">Note</label>
+                <textarea
+                  v-model="formData.note"
+                  class="form-textarea"
+                  rows="3"
+                  placeholder="Eventuali note o informazioni aggiuntive..."
+                ></textarea>
+              </div>
+              
+              <div v-if="!isEditMode" class="referral-note">
+                ℹ️ Il campo <strong>Referral</strong> (chi ha portato questo alunno) può essere compilato nel dettaglio alunno dopo la creazione.
+              </div>
             </div>
           </form>
         </div>
@@ -228,6 +246,29 @@
             <span v-if="saving">Salvataggio...</span>
             <span v-else>{{ isEditMode ? '💾 Salva Modifiche' : '➕ Crea Alunno' }}</span>
           </button>
+        </div>
+      </div>
+      
+      <!-- Modale Conferma Duplicato -->
+      <div v-if="showDuplicateModal" class="duplicate-modal-overlay" @click.self="showDuplicateModal = false">
+        <div class="duplicate-modal">
+          <h3>⚠️ Attenzione - Possibile Duplicato</h3>
+          <p>Esiste già un alunno con nome <strong>{{ formData.firstName }} {{ formData.lastName }}</strong>:</p>
+          <ul class="duplicate-list">
+            <li v-for="dup in duplicateStudents" :key="dup.id">
+              {{ dup.firstName }} {{ dup.lastName }}
+              <span v-if="dup.classe"> - {{ dup.classe }}</span>
+              <span v-if="dup.scuola"> ({{ dup.scuola }})</span>
+              <span :class="dup.active ? 'badge-active' : 'badge-inactive'">
+                {{ dup.active ? 'Attivo' : 'Inattivo' }}
+              </span>
+            </li>
+          </ul>
+          <p>Vuoi continuare comunque e creare un nuovo alunno?</p>
+          <div class="duplicate-modal-actions">
+            <button @click="showDuplicateModal = false" class="btn-secondary">Annulla</button>
+            <button @click="confirmCreateDespiteDuplicate" class="btn-warning">Crea Comunque</button>
+          </div>
         </div>
       </div>
     </div>
@@ -252,14 +293,17 @@ const emit = defineEmits(['close', 'saved']);
 // ========================================
 
 const saving = ref(false);
+const showDuplicateModal = ref(false);
+const duplicateStudents = ref([]);
+const skipDuplicateCheck = ref(false);
 
 const formData = ref({
   firstName: '',
   lastName: '',
   classe: '',
   scuola: '',
-  studentPhone: '', // ✅ AGGIUNGI
-  studentEmail: '',  // ✅ AGGIUNGI
+  studentPhone: '',
+  studentEmail: '',
   parentName: '',
   parentEmail: '',
   parentPhone: '',
@@ -269,6 +313,7 @@ const formData = ref({
   parentCF: '',
   parentPIva: '',
   note: '',
+  bisogniSpeciali: '',
   active: true,
 });
 
@@ -296,8 +341,8 @@ watch(
         lastName: student.lastName || '',
         classe: student.classe || '',
         scuola: student.scuola || '',
-        studentPhone: student.studentPhone || '', // ✅ AGGIUNGI
-        studentEmail: student.studentEmail || '',  // ✅ AGGIUNGI
+        studentPhone: student.studentPhone || '',
+        studentEmail: student.studentEmail || '',
         parentName: student.parentName || '',
         parentEmail: student.parentEmail || '',
         parentPhone: student.phone || student.parentPhone || '',
@@ -307,6 +352,7 @@ watch(
         parentCF: student.parentCF || '',
         parentPIva: student.parentPIva || '',
         note: student.note || '',
+        bisogniSpeciali: student.bisogniSpeciali || '',
         active: student.active !== undefined ? student.active : true,
       };
     }
@@ -321,6 +367,35 @@ watch(
 const handleSubmit = async () => {
   if (!canSave.value || saving.value) return;
 
+  // Check duplicati solo in creazione e se non abbiamo già saltato
+  if (!isEditMode.value && !skipDuplicateCheck.value) {
+    try {
+      const { data } = await studentsAPI.checkDuplicate(
+        formData.value.firstName.trim(),
+        formData.value.lastName.trim()
+      );
+      
+      if (data.hasDuplicate) {
+        duplicateStudents.value = data.duplicates;
+        showDuplicateModal.value = true;
+        return;
+      }
+    } catch (error) {
+      console.error('Errore check duplicati:', error);
+      // Continua comunque se il check fallisce
+    }
+  }
+
+  await performSave();
+};
+
+const confirmCreateDespiteDuplicate = async () => {
+  showDuplicateModal.value = false;
+  skipDuplicateCheck.value = true;
+  await performSave();
+};
+
+const performSave = async () => {
   saving.value = true;
 
   try {
@@ -329,8 +404,8 @@ const handleSubmit = async () => {
       lastName: formData.value.lastName.trim(),
       classe: formData.value.classe.trim() || null,
       scuola: formData.value.scuola.trim() || null,
-      studentPhone: formData.value.studentPhone.trim() || null,  // ✅ AGGIUNGI
-      studentEmail: formData.value.studentEmail.trim() || null,   // ✅ AGGIUNGI
+      studentPhone: formData.value.studentPhone.trim() || null,
+      studentEmail: formData.value.studentEmail.trim() || null,
       parentName: formData.value.parentName.trim() || null,
       parentEmail: formData.value.parentEmail.trim() || null,
       parentPhone: formData.value.parentPhone.trim() || null,
@@ -340,15 +415,14 @@ const handleSubmit = async () => {
       parentCF: formData.value.parentCF.trim() || null,
       parentPIva: formData.value.parentPIva.trim() || null,
       note: formData.value.note.trim() || null,
+      bisogniSpeciali: formData.value.bisogniSpeciali.trim() || null,
       active: formData.value.active,
     };
 
     if (isEditMode.value) {
-      // Modifica studente esistente
       await studentsAPI.update(props.student.id, payload);
       alert('✅ Alunno modificato con successo!');
     } else {
-      // Crea nuovo studente
       await studentsAPI.create(payload);
       alert('✅ Alunno creato con successo!');
     }
@@ -360,6 +434,7 @@ const handleSubmit = async () => {
     alert('❌ Errore durante il salvataggio');
   } finally {
     saving.value = false;
+    skipDuplicateCheck.value = false;
   }
 };
 
@@ -576,6 +651,113 @@ const handleClose = () => {
 
 .form-select option {
   padding: 8px;
+}
+
+/* Referral Note */
+.referral-note {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #0369a1;
+  line-height: 1.5;
+}
+
+/* Duplicate Modal */
+.duplicate-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2100;
+}
+
+.duplicate-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.duplicate-modal h3 {
+  margin: 0 0 16px 0;
+  color: #b45309;
+  font-size: 18px;
+}
+
+.duplicate-modal p {
+  margin: 0 0 12px 0;
+  color: #374151;
+  font-size: 14px;
+}
+
+.duplicate-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+}
+
+.duplicate-list li {
+  padding: 10px 12px;
+  background: #fef3c7;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #92400e;
+}
+
+.badge-active {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: #d1fae5;
+  color: #065f46;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.badge-inactive {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.duplicate-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.btn-warning {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  background: #f59e0b;
+  border: none;
+  color: white;
+  transition: all 0.2s;
+}
+
+.btn-warning:hover {
+  background: #d97706;
 }
 
 </style>

@@ -19,6 +19,18 @@ const router = createRouter({
       component: () => import('@/views/auth/LoginView.vue'),
       meta: { requiresGuest: true },
     },
+    {
+      path: '/prenota',
+      name: 'prenota',
+      component: () => import('@/views/public/BookingView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/disponibilita',
+      name: 'disponibilita',
+      component: () => import('@/views/public/AvailabilityView.vue'),
+      meta: { public: true },
+    },
 
     // ========================================
     // ROUTE AUTENTICATE (CON LAYOUT + SIDEBAR)
@@ -77,6 +89,18 @@ const router = createRouter({
           path: 'tutors/:id',
           name: 'tutor-detail',
           component: () => import('@/views/tutors/TutorDetailView.vue'),
+        },
+        {
+          path: 'contabilita',
+          name: 'contabilita',
+          component: () => import('@/views/ContabilitaView.vue'),
+          meta: { requiresAdmin: true },
+        },
+        {
+          path: 'matching',
+          name: 'matching',
+          component: () => import('@/views/availability/MatchingView.vue'),
+          meta: { requiresAdmin: true },
         },
       ],
     },

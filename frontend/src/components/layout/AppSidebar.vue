@@ -80,6 +80,35 @@
         <span>Gestione Tutor</span>
       </router-link>
 
+      <router-link 
+        v-if="authStore.isAdmin" 
+        to="/contabilita" 
+        class="nav-item"
+      >
+        <div class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+        </div>
+        <span>Contabilità</span>
+      </router-link>
+
+      <router-link 
+        v-if="authStore.isAdmin" 
+        to="/matching" 
+        class="nav-item"
+      >
+        <div class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+        </div>
+        <span>Matching</span>
+      </router-link>
 
       <router-link 
         v-if="authStore.isAdmin" 

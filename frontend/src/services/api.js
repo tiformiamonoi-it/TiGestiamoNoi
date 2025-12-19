@@ -51,6 +51,11 @@ export default api;
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
   getCurrentUser: () => api.get('/auth/me'),
+  // User management
+  getUsers: () => api.get('/auth/users'),
+  createUser: (data) => api.post('/auth/users', data),
+  updateUser: (id, data) => api.put(`/auth/users/${id}`, data),
+  resetPassword: (id, data) => api.post(`/auth/users/${id}/reset-password`, data),
 };
 
 // ============================================
@@ -63,6 +68,25 @@ export const studentsAPI = {
   create: (data) => api.post('/students', data),
   update: (id, data) => api.put(`/students/${id}`, data),
   delete: (id) => api.delete(`/students/${id}`),
+
+  // Check duplicati
+  checkDuplicate: (firstName, lastName) =>
+    api.get('/students/check-duplicate', { params: { firstName, lastName } }),
+
+  // Referral
+  searchForReferral: (query, excludeId) =>
+    api.get('/students/search-for-referral', { params: { query, excludeId } }),
+  addReferral: (studentId, referrerId) =>
+    api.post(`/students/${studentId}/referrals`, { referrerId }),
+  removeReferral: (studentId, referrerId) =>
+    api.delete(`/students/${studentId}/referrals/${referrerId}`),
+
+  // Hard Delete
+  getDeleteInfo: (id) => api.get(`/students/${id}/delete-info`),
+  hardDelete: (id) => api.delete(`/students/${id}/hard-delete`),
+
+  // Annual Payments
+  getAnnualPayments: (year) => api.get('/students/annual-payments', { params: { year } }),
 };
 
 // ============================================
@@ -104,7 +128,7 @@ export const paymentsAPI = {
   getAll: (params) => api.get('/payments', { params }),
   create: (data) => api.post('/payments', data),
   delete: (id) => api.delete(`/payments/${id}`),
-  
+
 };
 
 // ============================================
@@ -114,7 +138,9 @@ export const paymentsAPI = {
 export const configAPI = {
   getAll: (params) => api.get('/config', { params }),
   getByKey: (key) => api.get(`/config/${key}`),
-  update: (key, value) => api.put(`/config/${key}`, { value }),
+  create: (data) => api.post('/config', data),
+  update: (key, data) => api.put(`/config/${key}`, data),
+  delete: (key) => api.delete(`/config/${key}`),
 };
 
 // ============================================
@@ -136,16 +162,16 @@ export const dashboardAPI = {
 export const lessonsAPI = {
   // Lista lezioni
   getAll: (params) => api.get('/lessons', { params }),
-  
+
   // Singola lezione
   getById: (id) => api.get(`/lessons/${id}`),
-  
+
   // Crea lezione
   create: (data) => api.post('/lessons', data),
-  
+
   // Aggiorna lezione
   update: (id, data) => api.put(`/lessons/${id}`, data),
-  
+
   // Elimina lezione
   delete: (id) => api.delete(`/lessons/${id}`),
 
@@ -159,7 +185,7 @@ export const lessonsAPI = {
 export const calendarAPI = {
   // Giorni del mese
   getGiorni: (params) => api.get('/lessons/calendar/giorni', { params }),
-  
+
   // Alunni disponibili
   getAlunniDisponibili: (params) => api.get('/lessons/calendar/alunni-disponibili', { params }),
 };
@@ -172,12 +198,15 @@ export const calendarAPI = {
 export const timeslotsAPI = {
   // Lista slot orari
   getAll: (params) => api.get('/timeslots', { params }),
-  
+
   // Crea slot
   create: (data) => api.post('/timeslots', data),
-  
+
   // Attiva/disattiva
   toggle: (id, attivo) => api.patch(`/timeslots/${id}`, { attivo }),
+
+  // Elimina slot
+  delete: (id) => api.delete(`/timeslots/${id}`),
 };
 
 // ========================================
@@ -187,4 +216,97 @@ export const timeslotsAPI = {
 export const tutorsAPI = {
   // Lista tutor attivi
   getAll: (params) => api.get('/tutors', { params }),
+};
+
+// ========================================
+// ACCOUNTING API
+// ========================================
+
+export const accountingAPI = {
+  // Lista movimenti
+  getAll: (params) => api.get('/accounting', { params }),
+
+  // Statistiche panoramica
+  getStats: (params) => api.get('/accounting/stats', { params }),
+
+  // Categorie disponibili
+  getCategories: () => api.get('/accounting/categories'),
+
+  // Crea movimento manuale
+  create: (data) => api.post('/accounting', data),
+
+  // Modifica movimento
+  update: (id, data) => api.put(`/accounting/${id}`, data),
+
+  // Elimina movimento
+  delete: (id) => api.delete(`/accounting/${id}`),
+};
+
+// ========================================
+// BOOKING API (Pubblico)
+// ========================================
+
+export const bookingAPI = {
+  // Crea prenotazione (pubblico)
+  create: (data) => api.post('/bookings/public', data),
+
+  // Lista materie (pubblico)
+  getMaterie: () => api.get('/bookings/public/materie'),
+
+  // Verifica duplicato (pubblico)
+  checkDuplicate: (data) => api.post('/bookings/public/check-duplicate', data),
+
+  // Invia comunicazione (pubblico)
+  sendCommunication: (data) => api.post('/bookings/public/communication', data),
+
+  // Admin: lista prenotazioni
+  getAll: (params) => api.get('/bookings', { params }),
+
+  // Admin: aggiorna stato
+  updateStatus: (id, status) => api.patch(`/bookings/${id}/status`, { status }),
+
+  // Admin: elimina
+  delete: (id) => api.delete(`/bookings/${id}`),
+};
+
+// ========================================
+// AVAILABILITY API (Pubblico Tutor)
+// ========================================
+
+export const availabilityAPI = {
+  // Verifica telefono tutor (pubblico)
+  checkPhone: (phone) => api.post('/availability/public/check', { phone }),
+
+  // Ottieni disponibilità tutor (pubblico)
+  get: (phone) => api.post('/availability/public/get', { phone }),
+
+  // Salva disponibilità (pubblico) - data: array di { date, notes }
+  save: (phone, data) => api.post('/availability/public/save', { phone, data }),
+
+  // Admin: lista disponibilità
+  getAll: (params) => api.get('/availability', { params }),
+
+  // Admin: dati matching per data
+  getMatching: (date) => api.get(`/availability/matching/${date}`),
+
+  // Admin: assegna prenotazione a tutor/slot
+  assign: (bookingId, tutorId, slot) => api.post('/availability/assign', { bookingId, tutorId, slot }),
+};
+
+// ==========================================
+// Closures API (Chiusure)
+// ==========================================
+
+export const closuresAPI = {
+  // Admin: lista chiusure future
+  getAll: () => api.get('/closures/all'),
+
+  // Admin: aggiungi chiusura
+  add: (date, description) => api.post('/closures', { date, description }),
+
+  // Admin: rimuovi chiusura
+  delete: (id) => api.delete(`/closures/${id}`),
+
+  // Pubblico: verifica se data è chiusura
+  check: (date) => api.get(`/closures/check/${date}`),
 };

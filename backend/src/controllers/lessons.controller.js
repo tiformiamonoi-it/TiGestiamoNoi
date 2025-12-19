@@ -846,44 +846,33 @@ const getCalendarDays = async (req, res, next) => {
 /**
  * GET /api/lessons/calendar/alunni-disponibili
  * Ritorna alunni con pacchetto attivo
+ * Un pacchetto è attivo se NON è (SCADUTO + PAGATO insieme)
  */
 const getAvailableStudents = async (req, res, next) => {
   try {
     const { search } = req.query;
 
-    const where = {
-      active: true,
-      pacchetti: {
-        some: {
-          stati: {
-            has: 'ATTIVO',
-          },
-        },
-      },
-    };
+    // Trova studenti attivi
+    let whereStudent = { active: true };
 
     if (search) {
-      where.OR = [
+      whereStudent.OR = [
         { firstName: { contains: search, mode: 'insensitive' } },
         { lastName: { contains: search, mode: 'insensitive' } },
       ];
     }
 
     const students = await prisma.student.findMany({
-      where,
+      where: whereStudent,
       include: {
         pacchetti: {
-          where: {
-            stati: {
-              has: 'ATTIVO',
-            },
-          },
           select: {
             id: true,
             nome: true,
             tipo: true,
             oreResiduo: true,
             giorniResiduo: true,
+            stati: true,
           },
         },
       },
@@ -893,8 +882,31 @@ const getAvailableStudents = async (req, res, next) => {
       ],
     });
 
-    res.json({ students });
+    // Filtra: solo studenti con almeno un pacchetto "aperto"
+    // Un pacchetto è CHIUSO solo se ha SIA 'SCADUTO' SIA 'PAGATO'
+    const filteredStudents = students
+      .map(student => {
+        const pacchettiAttivi = student.pacchetti.filter(pkg => {
+          const stati = pkg.stati || [];
+          const isScaduto = stati.includes('SCADUTO');
+          const isPagato = stati.includes('PAGATO');
+          // Pacchetto è CHIUSO solo se entrambi true
+          const isChiuso = isScaduto && isPagato;
+          return !isChiuso;
+        });
+
+        return {
+          ...student,
+          pacchetti: pacchettiAttivi,
+        };
+      })
+      .filter(student => student.pacchetti.length > 0);
+
+    console.log(`✅ getAvailableStudents: ${filteredStudents.length} studenti con pacchetti attivi`);
+
+    res.json({ students: filteredStudents });
   } catch (error) {
+    console.error('Errore getAvailableStudents:', error);
     next(error);
   }
 };

@@ -44,7 +44,7 @@
               </div>
               <div class="student-info">
                 <div class="student-name">
-                  {{ student.firstName }} {{ student.lastName }}
+                  {{ student.lastName }} {{ student.firstName }}
                 </div>
                 <div class="student-meta">
                   <span class="school-badge">{{ student.scuola }}</span>

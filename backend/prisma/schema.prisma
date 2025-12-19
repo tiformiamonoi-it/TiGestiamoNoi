@@ -565,3 +565,20 @@ model TutorAvailability {
   @@index([date])
   @@map("tutor_availabilities")
 }
+
+// ============================================
+// CHIUSURE (Giorni di chiusura)
+// ============================================
+
+model ClosureDate {
+  id          String   @id @default(cuid())
+  
+  date        DateTime // Data di chiusura
+  description String?  // Descrizione (es: "Natale", "Pasqua")
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([date])
+  @@index([date])
+  @@map("closure_dates")
+}

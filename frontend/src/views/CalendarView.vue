@@ -274,7 +274,7 @@
 <script setup>
 // Vue 3 Composition API
 import { ref, computed, onMounted } from 'vue';
-import { calendarAPI, timeslotsAPI, tutorsAPI, lessonsAPI } from '@/services/api';
+import { calendarAPI, timeslotsAPI, tutorsAPI, lessonsAPI, closuresAPI } from '@/services/api';
 import CreateLessonModal from '@/components/calendar/CreateLessonModal.vue';
 import ManageSlotModal from '@/components/calendar/ManageSlotModal.vue';
 import AddQuickLessonModal from '@/components/calendar/AddQuickLessonModal.vue'; // ✅ NUOVO
@@ -313,6 +313,24 @@ const selectedSlot = ref(null);
 // ✅ NUOVO: Modal Aggiungi Tutor
 const showAddTutorModal = ref(false);
 const selectedDateForTutor = ref(null);
+
+// ✅ CHIUSURE: Date in cui non si possono aggiungere lezioni
+const closures = ref([]);
+
+// Verifica se una data è chiusura
+function isClosureDate(dateStr) {
+  return closures.value.some(c => c.date === dateStr);
+}
+
+// Carica chiusure
+async function loadClosures() {
+  try {
+    const response = await closuresAPI.getAll();
+    closures.value = response.data.closures || [];
+  } catch (err) {
+    console.error('Errore caricamento chiusure:', err);
+  }
+}
 
 // ========================================
 // COMPUTED
@@ -596,6 +614,12 @@ const isHalfLessonSlot = (giorno, tutorId, slotStart) => {
 
 // Modal gestione slot
 const openManageSlotModal = (date, tutorId, slotStart, slotEnd) => {
+  // ✅ Blocca se è una chiusura
+  if (isClosureDate(date)) {
+    alert('❌ Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
+    return;
+  }
+  
   // Trova tutor
   const giorno = giorniWithTutorRecap.value.find(g => g.data === date);
   const tutorData = giorno?.tutorsRecap.find(t => t.tutor.id === tutorId);
@@ -632,6 +656,12 @@ const handleSlotSaved = () => {
 
 // Modal aggiungi tutor
 const openAddTutorModal = (date) => {
+  // ✅ Blocca se è una chiusura
+  if (isClosureDate(date)) {
+    alert('❌ Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
+    return;
+  }
+  
   selectedDateForTutor.value = date;
   showAddTutorModal.value = true;
 };
@@ -643,7 +673,15 @@ const handleTutorAdded = () => {
 };
 
 const openCreateModal = (date = null) => {
-  selectedDate.value = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || new Date().toISOString().split('T')[0];
+  
+  // ✅ Blocca se è una chiusura
+  if (isClosureDate(targetDate)) {
+    alert('❌ Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
+    return;
+  }
+  
+  selectedDate.value = targetDate;
   showCreateModal.value = true;
 };
 
@@ -722,9 +760,10 @@ const formatDate = (dateStr) => {
   return formatter.format(date);
 };
 
-onMounted(() => {
+onMounted(async () => {
+  await loadClosures(); // ✅ Carica chiusure per blocco
   loadTimeSlots();
-  loadTutors(); // ✅ Carica tutor all'avvio
+  loadTutors();
   loadGiorni();
 });
 </script>

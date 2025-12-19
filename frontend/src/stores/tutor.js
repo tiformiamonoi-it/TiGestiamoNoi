@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
-import axios from 'axios';
+import api from '@/services/api';
 
-const API_URL = 'http://localhost:3000/api/tutors';
+const API_URL = '/tutors';
 
 export const useTutorStore = defineStore('tutor', {
     state: () => ({
@@ -47,7 +47,7 @@ export const useTutorStore = defineStore('tutor', {
                     conPagamentiSospesi: this.filters.conPagamentiSospesi,
                 };
 
-                const response = await axios.get(API_URL, { params });
+                const response = await api.get(API_URL, { params });
                 this.tutors = response.data.data;
                 this.pagination.total = response.data.total;
             } catch (err) {
@@ -63,7 +63,7 @@ export const useTutorStore = defineStore('tutor', {
                 const params = {
                     periodo: JSON.stringify(this.filters.periodo),
                 };
-                const response = await axios.get(`${API_URL}/stats`, { params });
+                const response = await api.get(`${API_URL}/stats`, { params });
                 this.stats = response.data;
             } catch (err) {
                 console.error('Errore caricamento statistiche:', err);
@@ -75,7 +75,7 @@ export const useTutorStore = defineStore('tutor', {
             this.error = null;
             this.currentTutor = null;
             try {
-                const response = await axios.get(`${API_URL}/${id}`);
+                const response = await api.get(`${API_URL}/${id}`);
                 this.currentTutor = response.data;
                 return response.data;
             } catch (err) {
@@ -89,7 +89,7 @@ export const useTutorStore = defineStore('tutor', {
 
         async updateTutor(id, data) {
             try {
-                await axios.put(`${API_URL}/${id}`, data);
+                await api.put(`${API_URL}/${id}`, data);
                 // Aggiorna stato locale se necessario o ricarica
                 await this.fetchTutorDetail(id);
             } catch (err) {
@@ -100,7 +100,7 @@ export const useTutorStore = defineStore('tutor', {
 
         async payTutors(pagamenti, dataPagamento, metodoPagamento, note) {
             try {
-                await axios.post(`${API_URL}/pay`, {
+                await api.post(`${API_URL}/pay`, {
                     pagamenti,
                     dataPagamento,
                     metodoPagamento,
@@ -118,7 +118,7 @@ export const useTutorStore = defineStore('tutor', {
 
         async updatePayment(payment) {
             try {
-                await axios.put(`${API_URL}/payments/${payment.id}`, {
+                await api.put(`${API_URL}/payments/${payment.id}`, {
                     importo: payment.importo,
                     note: payment.note,
                     proBono: payment.proBono,
@@ -133,7 +133,7 @@ export const useTutorStore = defineStore('tutor', {
 
         async deletePayment(id) {
             try {
-                await axios.delete(`${API_URL}/payments/${id}`);
+                await api.delete(`${API_URL}/payments/${id}`);
                 await this.fetchTutorDetail(this.currentTutor.tutor.id);
             } catch (err) {
                 console.error('Errore eliminazione pagamento:', err);

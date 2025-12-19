@@ -245,16 +245,19 @@
 
             <!-- Sezione Extra -->
             <div class="extra-section">
-              <div class="form-group">
-                <label>Referral - Come ci ha conosciuto?</label>
-                <input v-model="anagraficaForm.referral" type="text" placeholder="Es: Passaparola - amico Giulia" :disabled="!editingAnagrafica" />
-              </div>
+              <!-- Referral Component -->
+              <StudentReferralInput
+                :studentId="student.id"
+                :referrers="student.referredBy || []"
+                :disabled="!editingAnagrafica"
+                @updated="loadStudent"
+              />
               <div class="form-group">
                 <label>Bisogni Speciali / BES</label>
                 <input v-model="anagraficaForm.bisogniSpeciali" type="text" placeholder="Es: DSA - discalculia" :disabled="!editingAnagrafica" />
               </div>
-              <div v-if="isAdmin" class="form-group">
-                <label>Note Interne (solo Admin)</label>
+              <div class="form-group">
+                <label>Note</label>
                 <textarea v-model="anagraficaForm.note" :disabled="!editingAnagrafica" rows="3"></textarea>
               </div>
             </div>
@@ -711,7 +714,7 @@
         @renewed="handlePackageRenewed"
       />
       
-      <!-- Modal Conferma Eliminazione -->
+      <!-- Modal Conferma Eliminazione Pacchetto -->
       <div v-if="showDeleteConfirmModal" class="modal-overlay">
         <div class="modal-content">
           <h3>⚠️ Conferma Eliminazione</h3>
@@ -723,11 +726,82 @@
           </div>
         </div>
       </div>
+      
+      <!-- Modal Conferma Eliminazione Studente -->
+      <div v-if="showHardDeleteModal" class="modal-overlay">
+        <div class="modal-content hard-delete-modal">
+          <h3>🗑️ Elimina Definitivamente Alunno</h3>
+          
+          <div v-if="deleteInfoLoading" class="loading-delete-info">
+            Caricamento informazioni...
+          </div>
+          
+          <div v-else-if="deleteInfo" class="delete-info-content">
+            <p>Stai per eliminare <strong>{{ deleteInfo.studentName }}</strong> e tutti i dati collegati:</p>
+            
+            <div class="delete-summary">
+              <div class="delete-item" :class="{ 'has-data': deleteInfo.packagesCount > 0 }">
+                <span class="icon">📦</span>
+                <span class="count">{{ deleteInfo.packagesCount }}</span>
+                <span class="label">Pacchetti</span>
+              </div>
+              <div class="delete-item" :class="{ 'has-data': deleteInfo.lessonsCount > 0 }">
+                <span class="icon">📚</span>
+                <span class="count">{{ deleteInfo.lessonsCount }}</span>
+                <span class="label">Lezioni</span>
+              </div>
+              <div class="delete-item warning" :class="{ 'has-data': deleteInfo.paymentsCount > 0 }">
+                <span class="icon">💰</span>
+                <span class="count">{{ deleteInfo.paymentsCount }}</span>
+                <span class="label">Pagamenti</span>
+              </div>
+            </div>
+            
+            <div v-if="deleteInfo.lessonsCount > 0" class="lesson-dates">
+              <p class="dates-title">Ultime date lezioni:</p>
+              <div class="dates-list">
+                <span v-for="(date, idx) in deleteInfo.lessonDates" :key="idx" class="date-badge">
+                  {{ formatDate(date) }}
+                </span>
+                <span v-if="deleteInfo.hasMoreLessons" class="date-badge more">
+                  +altre...
+                </span>
+              </div>
+            </div>
+            
+            <div v-if="deleteInfo.paymentsCount > 0" class="payment-warning">
+              ⚠️ I pagamenti verranno eliminati anche dalla contabilità!
+            </div>
+            
+            <div class="confirm-input-section">
+              <p>Per confermare, digita <strong>Elimina</strong> e clicca OK:</p>
+              <input 
+                v-model="deleteConfirmText" 
+                type="text" 
+                class="confirm-input"
+                placeholder="Digita 'Elimina'"
+              />
+            </div>
+          </div>
+          
+          <div class="modal-actions">
+            <button @click="closeHardDeleteModal" class="btn-secondary">Annulla</button>
+            <button 
+              @click="confirmHardDelete" 
+              class="btn-primary btn-delete-confirm"
+              :disabled="deleteConfirmText !== 'Elimina' || deletingStudent"
+            >
+              <span v-if="deletingStudent">Eliminazione...</span>
+              <span v-else>🗑️ Elimina Alunno</span>
+            </button>
+          </div>
+        </div>
+      </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'; // ✅ Added watch
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { studentsAPI, paymentsAPI, packagesAPI, lessonsAPI } from '@/services/api';
@@ -735,6 +809,7 @@ import CreateStudentModal from '@/components/students/CreateStudentModal.vue';
 import EditPackageModal from '@/components/students/EditPackageModal.vue';
 import RegisterPaymentModal from '@/components/students/RegisterPaymentModal.vue';
 import RenewPackageModal from '@/components/students/RenewPackageModal.vue';
+import StudentReferralInput from '@/components/students/StudentReferralInput.vue';
 
 
 const route = useRoute();
@@ -771,6 +846,13 @@ const editingAnagrafica = ref(false);
 const showDeleteConfirmModal = ref(false);
 const packageToDelete = ref(null);
 
+// Hard delete student
+const showHardDeleteModal = ref(false);
+const deleteInfo = ref(null);
+const deleteInfoLoading = ref(false);
+const deleteConfirmText = ref('');
+const deletingStudent = ref(false);
+
 // Form Anagrafica
 const anagraficaForm = ref({
   firstName: '',
@@ -792,7 +874,7 @@ const anagraficaForm = ref({
 // COMPUTED
 // ========================================
 
-const isAdmin = computed(() => authStore.user?.ruolo === 'ADMIN');
+const isAdmin = computed(() => authStore.user?.role === 'ADMIN');
 
 // Apri modale creazione nuovo pacchetto
 const openCreatePackage = () => {
@@ -1288,16 +1370,44 @@ const attivaAlunno = async () => {
 };
 
 const eliminaAlunno = async () => {
-  if (!confirm('Sei SICURO? Questa azione è irreversibile!')) return;
-  if (!confirm('Ripeti conferma per eliminare definitivamente')) return;
+  showMenu.value = false;
+  deleteConfirmText.value = '';
+  deleteInfo.value = null;
+  deleteInfoLoading.value = true;
+  showHardDeleteModal.value = true;
 
   try {
-    await studentsAPI.delete(student.value.id);
-    alert('✅ Alunno eliminato');
+    const response = await studentsAPI.getDeleteInfo(student.value.id);
+    deleteInfo.value = response.data;
+  } catch (error) {
+    console.error('Errore caricamento info eliminazione:', error);
+    alert('Errore durante il caricamento delle informazioni');
+    showHardDeleteModal.value = false;
+  } finally {
+    deleteInfoLoading.value = false;
+  }
+};
+
+const closeHardDeleteModal = () => {
+  showHardDeleteModal.value = false;
+  deleteInfo.value = null;
+  deleteConfirmText.value = '';
+};
+
+const confirmHardDelete = async () => {
+  if (deleteConfirmText.value !== 'Elimina') return;
+  
+  deletingStudent.value = true;
+  
+  try {
+    await studentsAPI.hardDelete(student.value.id);
+    alert('✅ Alunno eliminato definitivamente');
     router.push('/students');
   } catch (error) {
     console.error('Errore eliminazione:', error);
     alert('❌ Errore durante l\'eliminazione');
+  } finally {
+    deletingStudent.value = false;
   }
 };
 
@@ -3195,4 +3305,187 @@ onMounted(() => {
   color: #5e72e4;
 }
 
+/* Modal Overlay Base */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 450px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+  margin: 0 0 16px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.modal-content p {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #374151;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.text-danger {
+  color: #f5365c;
+}
+
+/* Hard Delete Modal */
+.hard-delete-modal {
+  max-width: 500px;
+}
+
+.loading-delete-info {
+  text-align: center;
+  color: #6b7280;
+  padding: 20px;
+}
+
+.delete-info-content {
+  margin-bottom: 20px;
+}
+
+.delete-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.delete-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.delete-item.has-data {
+  background: #fef3c7;
+}
+
+.delete-item.warning.has-data {
+  background: #fee2e2;
+}
+
+.delete-item .icon {
+  font-size: 24px;
+}
+
+.delete-item .count {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.delete-item .label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.lesson-dates {
+  margin: 16px 0;
+}
+
+.dates-title {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.dates-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.date-badge {
+  padding: 4px 10px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.date-badge.more {
+  background: #d1d5db;
+  font-style: italic;
+}
+
+.payment-warning {
+  padding: 12px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 14px;
+  margin: 16px 0;
+}
+
+.confirm-input-section {
+  margin-top: 20px;
+}
+
+.confirm-input-section p {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.confirm-input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.confirm-input:focus {
+  outline: none;
+  border-color: #f5365c;
+}
+
+.btn-delete-confirm {
+  background: linear-gradient(135deg, #f5365c, #ff6b6b) !important;
+}
+
+.btn-delete-confirm:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(245, 54, 92, 0.4) !important;
+}
+
+.btn-delete-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 </style>
+

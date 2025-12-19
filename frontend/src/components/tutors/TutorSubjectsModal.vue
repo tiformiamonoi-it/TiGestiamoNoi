@@ -56,7 +56,8 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted, computed } from 'vue';
+import { configAPI } from '@/services/api';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -70,22 +71,47 @@ const emit = defineEmits(['close', 'save']);
 
 const subjects = ref([]);
 const newSubject = ref('');
+const configMaterie = ref([]);
+const loadingMaterie = ref(false);
 
-// Predefined list of subjects to add
-const availableSubjects = [
-  'Matematica', 'Fisica', 'Chimica', 'Inglese', 'Italiano', 
-  'Latino', 'Greco', 'Storia', 'Filosofia', 'Scienze', 
-  'Francese', 'Spagnolo', 'Tedesco', 'Informatica', 'Diritto'
-];
+// Load subjects from settings
+async function loadMaterieFromConfig() {
+  loadingMaterie.value = true;
+  try {
+    const response = await configAPI.getAll({ category: 'materie' });
+    configMaterie.value = response.data.configs || [];
+  } catch (error) {
+    console.error('Errore caricamento materie:', error);
+  } finally {
+    loadingMaterie.value = false;
+  }
+}
 
-watch(() => props.isOpen, (val) => {
+// Available subjects from config (not already added)
+const availableSubjects = computed(() => {
+  const addedNames = subjects.value.map(s => s.name.toLowerCase());
+  return configMaterie.value
+    .map(c => c.value)
+    .filter(name => !addedNames.includes(name.toLowerCase()));
+});
+
+watch(() => props.isOpen, async (val) => {
   if (val) {
+    // Load materie from config if not already loaded
+    if (configMaterie.value.length === 0) {
+      await loadMaterieFromConfig();
+    }
+    
     // Clone initial subjects and ensure structure
     subjects.value = props.initialSubjects.map(s => ({
       ...s,
-      levels: s.levels || { medie: true, superiori: true } // Default levels if missing
+      levels: s.levels || { medie: true, superiori: true }
     }));
   }
+});
+
+onMounted(() => {
+  loadMaterieFromConfig();
 });
 
 function addSubject() {
@@ -98,7 +124,7 @@ function addSubject() {
   }
 
   subjects.value.push({
-    id: newSubject.value.toLowerCase(),
+    id: newSubject.value.toLowerCase().replace(/\s+/g, '_'),
     name: newSubject.value,
     selected: true,
     levels: { medie: true, superiori: true }

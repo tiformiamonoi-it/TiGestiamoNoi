@@ -19,6 +19,7 @@ const tutorsRoutes = require('./routes/tutors.routes');
 const accountingRoutes = require('./routes/accounting.routes');
 const bookingRoutes = require('./routes/booking.routes');
 const availabilityRoutes = require('./routes/availability.routes');
+const closuresRoutes = require('./routes/closures.routes');
 
 const app = express();
 
@@ -86,6 +87,7 @@ app.use('/api/tutors', tutorsRoutes);
 app.use('/api/accounting', accountingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/availability', availabilityRoutes);
+app.use('/api/closures', closuresRoutes);
 
 // ============================================
 // ERROR HANDLERS

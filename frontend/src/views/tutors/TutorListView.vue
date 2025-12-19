@@ -19,6 +19,15 @@
           <option v-for="y in [2023, 2024, 2025, 2026]" :key="y" :value="y">{{ y }}</option>
         </select>
       </div>
+      
+      <!-- New Tutor Button -->
+      <button @click="openCreateTutorModal" class="btn-new-tutor">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        Nuovo Tutor
+      </button>
     </div>
 
     <!-- Action Bar -->
@@ -89,6 +98,14 @@
       @close="isPaymentModalOpen = false"
       @confirm="handlePaymentConfirm"
     />
+    
+    <!-- Create/Edit Tutor Modal -->
+    <TutorEditModal
+      :is-open="isCreateTutorModalOpen"
+      :tutor="tutorToEdit"
+      @close="closeCreateTutorModal"
+      @save="handleTutorSave"
+    />
   </div>
 </template>
 
@@ -100,6 +117,8 @@ import { useTutorStore } from '@/stores/tutor';
 import TutorStatsCards from '@/components/tutors/TutorStatsCards.vue';
 import TutorTable from '@/components/tutors/TutorTable.vue';
 import PaymentModal from '@/components/tutors/PaymentModal.vue';
+import TutorEditModal from '@/components/tutors/TutorEditModal.vue';
+import api from '@/services/api';
 
 const router = useRouter();
 const tutorStore = useTutorStore();
@@ -108,6 +127,10 @@ const { tutors, stats, filters, pagination } = storeToRefs(tutorStore);
 const selectedIds = ref([]);
 const isPaymentModalOpen = ref(false);
 const tutorsForPayment = ref([]);
+
+// Create/Edit Tutor Modal
+const isCreateTutorModalOpen = ref(false);
+const tutorToEdit = ref(null);
 
 // Init
 onMounted(() => {
@@ -171,6 +194,37 @@ async function handlePaymentConfirm(payload) {
     alert('Errore durante il pagamento: ' + e.message);
   }
 }
+
+// Create Tutor Functions
+function openCreateTutorModal() {
+  tutorToEdit.value = null;
+  isCreateTutorModalOpen.value = true;
+}
+
+function closeCreateTutorModal() {
+  isCreateTutorModalOpen.value = false;
+  tutorToEdit.value = null;
+}
+
+async function handleTutorSave(tutorData) {
+  try {
+    if (tutorToEdit.value) {
+      // Edit existing
+      await api.put(`/tutors/${tutorToEdit.value.id}`, tutorData);
+      alert('✅ Tutor aggiornato con successo!');
+    } else {
+      // Create new
+      await api.post('/tutors', tutorData);
+      alert('✅ Tutor creato con successo!');
+    }
+    closeCreateTutorModal();
+    tutorStore.fetchTutors();
+    tutorStore.fetchStats();
+  } catch (e) {
+    console.error('Errore salvataggio tutor:', e);
+    alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+  }
+}
 </script>
 
 <style scoped>
@@ -207,25 +261,59 @@ async function handlePaymentConfirm(payload) {
   display: flex;
   gap: 8px;
   background: white;
-  padding: 4px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
   border: 1px solid #e9ecef;
 }
 
 .filter-select {
   border: none;
-  background: transparent;
-  padding: 6px 12px;
+  background: #f8f9fa;
+  padding: 8px 16px;
   font-size: 14px;
   font-weight: 600;
   color: #344767;
   cursor: pointer;
   outline: none;
+  border-radius: 6px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238392ab' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 32px;
+}
+
+.filter-select:hover {
+  background: #e9ecef;
 }
 
 .filter-select:focus {
-  background: #f8f9fa;
-  border-radius: 6px;
+  background: #e9ecef;
+  box-shadow: 0 0 0 2px rgba(94, 114, 228, 0.2);
+}
+
+/* New Tutor Button */
+.btn-new-tutor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #5e72e4, #825ee4);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-new-tutor:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(94, 114, 228, 0.4);
 }
 
 /* Actions Bar */
@@ -338,5 +426,26 @@ async function handlePaymentConfirm(payload) {
 .btn-pagination:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Checkbox styling */
+.filter-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #5e72e4;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+/* Remove default focus outline on select */
+.filter-select:focus-visible {
+  outline: none;
+}
+
+/* Option styling */
+.filter-select option {
+  padding: 8px;
+  background: white;
+  color: #344767;
 }
 </style>

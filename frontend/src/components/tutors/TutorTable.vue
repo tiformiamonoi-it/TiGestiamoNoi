@@ -53,7 +53,9 @@
                 <div class="tutor-name cursor-pointer hover:text-blue-600" @click="$emit('view', tutor.id)">
                   {{ tutor.lastName }} {{ tutor.firstName }}
                 </div>
-                <div class="tutor-email">{{ tutor.email }}</div>
+                <div class="tutor-email" :class="{ 'no-email': !hasEmail(tutor) }">
+                  {{ hasEmail(tutor) ? tutor.email : 'Email non presente' }}
+                </div>
               </div>
             </div>
           </td>
@@ -197,6 +199,10 @@ function formatMese(dateStr) {
   return date.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 }
 
+function hasEmail(tutor) {
+  return tutor.email && !tutor.email.includes('@placeholder.local');
+}
+
 function getInitials(tutor) {
   return `${tutor.firstName.charAt(0)}${tutor.lastName.charAt(0)}`;
 }
@@ -247,13 +253,34 @@ function getInitials(tutor) {
 
 /* Checkbox */
 .checkbox-input {
+  width: 18px;
+  height: 18px;
+  accent-color: #5e72e4;
+  cursor: pointer;
+  border: 2px solid #d1d5db;
   border-radius: 4px;
-  color: #5e72e4;
-  border-color: #d1d5db;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: white;
+  transition: all 0.2s;
+}
+
+.checkbox-input:checked {
+  background: #5e72e4;
+  border-color: #5e72e4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.checkbox-input:hover {
+  border-color: #5e72e4;
 }
 
 .checkbox-input:focus {
-  ring-color: #5e72e4;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(94, 114, 228, 0.2);
 }
 
 /* Tutor Cell */
@@ -292,6 +319,11 @@ function getInitials(tutor) {
 .tutor-email {
   font-size: 12px;
   color: #8392ab;
+}
+
+.tutor-email.no-email {
+  font-style: italic;
+  color: #adb5bd;
 }
 
 /* States Cell */
