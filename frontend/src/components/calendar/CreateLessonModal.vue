@@ -374,6 +374,37 @@ const handleSave = async () => {
     const allSlots = [...mainSlots.value, ...extraSlots.value]
       .filter(slot => slot.studenti.length > 0);
     
+    // ✅ VERIFICA STUDENTI DUPLICATI prima di salvare
+    const duplicateErrors = [];
+    for (const slot of allSlots) {
+      try {
+        const studentIds = slot.studenti.map(s => s.id).join(',');
+        const response = await lessonsAPI.checkDuplicate(
+          formData.value.tutorId, 
+          formData.value.data, 
+          slot.id,
+          studentIds
+        );
+        if (response.data.isDuplicate && response.data.duplicateStudentNames?.length > 0) {
+          duplicateErrors.push({
+            slot: `${slot.oraInizio}-${slot.oraFine}`,
+            students: response.data.duplicateStudentNames.join(', ')
+          });
+        }
+      } catch (err) {
+        console.error('Errore verifica duplicato:', err);
+      }
+    }
+    
+    if (duplicateErrors.length > 0) {
+      const errorMessages = duplicateErrors.map(e => 
+        `• Slot ${e.slot}: ${e.students} già presenti`
+      ).join('\n');
+      alert(`⚠️ Studenti duplicati trovati:\n\n${errorMessages}\n\nRimuovi gli studenti duplicati o usa la modifica lezione per aggiungerli.`);
+      saving.value = false;
+      return;
+    }
+    
     // ✅ SEQUENZIALE: crea le lezioni una alla volta
     const results = [];
     for (const slot of allSlots) {

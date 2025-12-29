@@ -3,7 +3,7 @@
 
 const prisma = require('../config/prisma');
 const { validationResult } = require('express-validator');
-const { updatePackageStates, isPacchettoClosed } = require('../utils/packageStates'); // ✅ NUOVO
+const { updatePackageStates, isPacchettoClosed, refreshAllPackageStates } = require('../utils/packageStates');
 const { calcolaScadenzaPacchetto } = require('../utils/dateHelpers'); // ✅ NUOVO
 
 
@@ -520,10 +520,31 @@ const deletePackage = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/packages/refresh-all
+ * Aggiorna tutti gli stati dei pacchetti non chiusi
+ * Usato per refresh manuale completo
+ */
+const refreshAllStates = async (req, res, next) => {
+  try {
+    const count = await refreshAllPackageStates();
+
+    res.json({
+      success: true,
+      message: `Stati aggiornati per ${count} pacchetti`,
+      count
+    });
+  } catch (error) {
+    console.error('Errore refresh stati:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getPackages,
   getPackageById,
   createPackage,
   updatePackage,
   deletePackage,
+  refreshAllStates,
 };

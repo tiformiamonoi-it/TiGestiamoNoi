@@ -32,11 +32,16 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token scaduto o non valido - logout
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    // Gestisci 401 (non autenticato) e 403 (token scaduto/non valido)
+    // Il backend restituisce 403 per token scaduti (TokenExpiredError)
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      // Evita redirect multipli se siamo già sulla pagina di login
+      if (window.location.pathname !== '/login') {
+        console.warn('🔐 Sessione scaduta o token non valido - logout automatico');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -176,6 +181,13 @@ export const lessonsAPI = {
   delete: (id) => api.delete(`/lessons/${id}`),
 
   deleteBulkByTutorDate: (tutorId, date) => api.delete(`/lessons/bulk/by-tutor-date?tutorId=${tutorId}&data=${date}`),
+
+  // Verifica duplicato studenti nello slot
+  checkDuplicate: (tutorId, date, timeSlotId, studentIds = null) => {
+    const params = { tutorId, date, timeSlotId };
+    if (studentIds) params.studentIds = studentIds;
+    return api.get('/lessons/check-duplicate', { params });
+  },
 };
 
 // ========================================

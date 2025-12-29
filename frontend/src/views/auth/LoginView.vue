@@ -63,8 +63,9 @@ const handleLogin = async () => {
   try {
     await authStore.login(credentials.value);
     router.push('/dashboard');
-  } catch (error) {
-    error.value = authStore.error || 'Errore durante il login';
+  } catch (err) {
+    // Mostra messaggio d'errore - usa il messaggio dal backend o un messaggio generico
+    error.value = err.response?.data?.error || authStore.error || 'Email o password errati';
   } finally {
     loading.value = false;
   }

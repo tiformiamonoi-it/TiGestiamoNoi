@@ -15,13 +15,13 @@
       </div>
       <div 
         class="stat-card" 
-        :class="{ active: activeFilter === 'IN_SCADENZA' }"
-        @click="setFilter('IN_SCADENZA')"
+        :class="{ active: activeFilter === 'DA_RINNOVARE' }"
+        @click="setFilter('DA_RINNOVARE')"
       >
         <div class="stat-icon warning">⏰</div>
         <div class="stat-content">
-          <div class="stat-value">{{ stats.inScadenza }}</div>
-          <div class="stat-label">In Scadenza</div>
+          <div class="stat-value">{{ stats.daRinnovare }}</div>
+          <div class="stat-label">Da Rinnovare</div>
         </div>
       </div>
       <div 
@@ -84,11 +84,13 @@
         <select v-model="filterStato" class="filter-select" @change="loadPackages(true)">
           <option value="">Tutti gli Stati</option>
           <option value="ATTIVO">🟢 Attivo</option>
-          <option value="IN_SCADENZA">🟡 In Scadenza</option>
+          <option value="DA_RINNOVARE">🟠 Da Rinnovare</option>
           <option value="SCADUTO">🔴 Scaduto</option>
-          <option value="DA_PAGARE">💳 Da Pagare</option>
-          <option value="ESAURITO">⚫ Esaurito</option>
-          <option value="CHIUSO">✅ Chiuso</option>
+          <option value="ESAURITO">🔴 Esaurito</option>
+          <option value="NEGATIVO">🔴 Negativo</option>
+          <option value="DA_PAGARE">🟡 Da Pagare</option>
+          <option value="PAGATO">🔵 Pagato</option>
+          <option value="CHIUSO">⚫ Chiuso</option>
         </select>
 
         <button 
@@ -208,7 +210,7 @@
             <td class="status-cell">
               <div class="stati-list">
                 <span 
-                  v-for="stato in pkg.stati" 
+                  v-for="stato in getDisplayStates(pkg.stati)" 
                   :key="stato"
                   :class="['status-badge', stato.toLowerCase()]"
                 >
@@ -288,7 +290,7 @@ const renewPackage = ref(null);
 // Stats
 const stats = ref({
   attivi: 0,
-  inScadenza: 0,
+  daRinnovare: 0,
   scaduti: 0,
   daPagare: 0,
   chiusi: 0
@@ -382,10 +384,10 @@ async function loadPackages(reset = false) {
 function calculateStats(pkgs) {
   stats.value = {
     attivi: pkgs.filter(p => p.stati?.includes('ATTIVO')).length,
-    inScadenza: pkgs.filter(p => p.stati?.includes('IN_SCADENZA')).length,
+    daRinnovare: pkgs.filter(p => p.stati?.includes('DA_RINNOVARE')).length,
     scaduti: pkgs.filter(p => p.stati?.includes('SCADUTO')).length,
     daPagare: pkgs.filter(p => p.stati?.includes('DA_PAGARE')).length,
-    chiusi: pkgs.filter(p => p.stati?.includes('CHIUSO') || p.stati?.includes('PAGATO')).length
+    chiusi: pkgs.filter(p => p.stati?.includes('CHIUSO')).length
   };
 }
 
@@ -518,15 +520,24 @@ function getHoursDisplay(pkg) {
   return `${parseFloat(pkg.oreResiduo || 0).toFixed(1)} / ${parseFloat(pkg.oreAcquistate || 0).toFixed(1)} h`;
 }
 
+// Filtra stati per visualizzazione: se CHIUSO, mostra solo quello
+function getDisplayStates(stati) {
+  if (!Array.isArray(stati) || stati.length === 0) return [];
+  if (stati.includes('CHIUSO')) return ['CHIUSO'];
+  return stati;
+}
+
+// Labels minimali senza emoji
 function getStatoLabel(stato) {
   const labels = {
-    'ATTIVO': '🟢 Attivo',
-    'IN_SCADENZA': '🟡 In Scadenza',
-    'SCADUTO': '🔴 Scaduto',
-    'ESAURITO': '⚫ Esaurito',
-    'DA_PAGARE': '💳 Da Pagare',
-    'PAGATO': '✅ Pagato',
-    'CHIUSO': '✅ Chiuso'
+    'ATTIVO': 'Attivo',
+    'DA_RINNOVARE': 'Da Rinnovare',
+    'SCADUTO': 'Scaduto',
+    'ESAURITO': 'Esaurito',
+    'NEGATIVO': 'Negativo',
+    'DA_PAGARE': 'Da Pagare',
+    'PAGATO': 'Pagato',
+    'CHIUSO': 'Chiuso'
   };
   return labels[stato] || stato;
 }
@@ -872,12 +883,22 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+/* ATTIVO - Verde */
 .status-badge.attivo { background: rgba(45, 206, 137, 0.1); color: #2dce89; }
-.status-badge.in_scadenza { background: rgba(251, 99, 64, 0.1); color: #fb6340; }
+/* DA_RINNOVARE - Arancione */
+.status-badge.da_rinnovare { background: rgba(251, 99, 64, 0.1); color: #fb6340; }
+/* SCADUTO - Rosso */
 .status-badge.scaduto { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
-.status-badge.esaurito { background: rgba(52, 71, 103, 0.1); color: #344767; }
-.status-badge.da_pagare { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
-.status-badge.pagato, .status-badge.chiuso { background: rgba(45, 206, 137, 0.1); color: #2dce89; }
+/* ESAURITO - Rosso */
+.status-badge.esaurito { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
+/* NEGATIVO - Rosso */
+.status-badge.negativo { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
+/* DA_PAGARE - Giallo */
+.status-badge.da_pagare { background: rgba(251, 191, 36, 0.1); color: #d97706; }
+/* PAGATO - Blu */
+.status-badge.pagato { background: rgba(94, 114, 228, 0.1); color: #5e72e4; }
+/* CHIUSO - Grigio scuro */
+.status-badge.chiuso { background: rgba(52, 71, 103, 0.1); color: #344767; }
 
 .actions-cell {
   width: 80px;

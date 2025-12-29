@@ -24,4 +24,7 @@ router.post('/', requireRole(['ADMIN']), validation, controller.createPackage);
 router.put('/:id', requireRole(['ADMIN']), controller.updatePackage);
 router.delete('/:id', requireRole(['ADMIN']), controller.deletePackage);
 
+// Endpoint per refresh manuale di tutti gli stati pacchetti
+router.post('/refresh-all', requireRole(['ADMIN']), controller.refreshAllStates);
+
 module.exports = router;

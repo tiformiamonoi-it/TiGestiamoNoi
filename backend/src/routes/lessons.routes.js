@@ -15,6 +15,7 @@ const {
   deleteLessonsByTutorAndDate,
   getCalendarDays,
   getAvailableStudents,
+  checkTutorSlotDuplicate,
 } = require('../controllers/lessons.controller');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -36,6 +37,12 @@ router.get('/calendar/giorni', getCalendarDays);
  * Alunni con pacchetto attivo
  */
 router.get('/calendar/alunni-disponibili', getAvailableStudents);
+
+/**
+ * GET /api/lessons/check-duplicate
+ * Verifica se esiste già lezione per tutor+data+slot
+ */
+router.get('/check-duplicate', checkTutorSlotDuplicate);
 
 // ============================================
 // CRUD LEZIONI (DOPO - route dinamiche)

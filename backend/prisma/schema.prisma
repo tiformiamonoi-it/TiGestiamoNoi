@@ -236,16 +236,35 @@ enum PackageType {
   MENSILE  // Pacchetto mensile (es: 20 giorni × 3 ore/giorno)
 }
 
+// =====================================
+// STATI DEL PACCHETTO
+// Possono coesistere più stati insieme
+// =====================================
 enum PackageStatus {
-  ATTIVO          // In regola, ore positive
-  SCADUTO         // Data scaduta
-  ESAURITO        // Ore a zero
-  ORE_NEGATIVE    // Ore negative (oltre limite)
-  IN_SCADENZA     // < 20% ore rimanenti
-  DA_RINNOVARE    // Scade entro 7 giorni
-  PAGATO          // Completamente saldato
-  DA_PAGARE       // Non completamente saldato
-  PAG_SOSPESO     // Sospeso manualmente
+  // --- STATI UTILIZZO ---
+  // Questi stati indicano se il pacchetto può essere usato per lezioni
+  ATTIVO          // Pacchetto utilizzabile: oreResiduo > 0 (o giorniResiduo > 0) E non scaduto
+  DA_RINNOVARE    // Avviso rinnovo: residuo < 20% OPPURE <= 3 giorni a scadenza
+                  // Coesiste con ATTIVO, serve come promemoria per rinnovare
+  
+  // --- STATI FINE ---
+  // Questi stati indicano che il pacchetto non è più utilizzabile normalmente
+  // ATTENZIONE: rimangono selezionabili per gestire ore extra (stato NEGATIVO)
+  SCADUTO         // Data scadenza superata: dataScadenza < oggi
+  ESAURITO        // Risorse terminate: oreResiduo = 0 (o giorniResiduo = 0)
+  NEGATIVO        // Risorse in debito: oreResiduo < 0 - l'alunno ha usato ore extra
+                  // Le ore extra andranno trasferite al nuovo pacchetto al rinnovo
+  
+  // --- STATI PAGAMENTO ---
+  // Sempre uno dei due, mai entrambi
+  DA_PAGARE       // Manca il saldo: importoResiduo > 0 (anche con acconto presente)
+  PAGATO          // Completamente saldato: importoResiduo = 0
+  
+  // --- STATO FINALE ---
+  // Quando un pacchetto è PAGATO + (SCADUTO o ESAURITO), diventa CHIUSO
+  // CHIUSO viene salvato insieme agli altri stati ma visualizzato DA SOLO nel frontend
+  // Se si elimina il saldo o si modificano ore/scadenza, CHIUSO viene rimosso
+  CHIUSO          // Pacchetto concluso: non selezionabile per nuove lezioni
 }
 
 // ============================================

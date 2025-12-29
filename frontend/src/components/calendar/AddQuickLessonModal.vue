@@ -23,7 +23,11 @@
         <!-- Tutor -->
         <div class="form-group">
           <label class="form-label">👤 Tutor</label>
-          <select v-model="formData.tutorId" class="form-select" required>
+          <select 
+            v-model="formData.tutorId" 
+            class="form-select" 
+            required
+          >
             <option value="">Seleziona tutor...</option>
             <option v-for="tutor in tutors" :key="tutor.id" :value="tutor.id">
               {{ tutor.firstName }} {{ tutor.lastName }}
@@ -34,12 +38,19 @@
         <!-- Slot Orario -->
         <div class="form-group">
           <label class="form-label">🕐 Slot Orario</label>
-          <select v-model="formData.timeSlotId" class="form-select" required>
+          <select 
+            v-model="formData.timeSlotId" 
+            class="form-select" 
+            required
+          >
             <option value="">Seleziona orario...</option>
             <option v-for="slot in timeSlots" :key="slot.id" :value="slot.id">
               {{ slot.oraInizio.substring(0, 5) }} - {{ slot.oraFine.substring(0, 5) }}
             </option>
           </select>
+          <div v-if="existingStudentsInfo" class="info-message">
+            ℹ️ {{ existingStudentsInfo }}
+          </div>
         </div>
 
         <!-- Studenti -->
@@ -137,7 +148,7 @@
       <!-- Modal Ricerca Studenti -->
       <StudentSearchModal
         v-if="showStudentSearch"
-        :selected-ids="formData.studenti.map(s => s.id)"
+        :selected-ids="[...formData.studenti.map(s => s.id), ...existingStudentIds]"
         @add-students="handleAddStudents"
         @close="showStudentSearch = false"
       />
@@ -146,7 +157,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import StudentSearchModal from './StudentSearchModal.vue';
 import { timeslotsAPI, tutorsAPI, lessonsAPI } from '@/services/api';
 
@@ -176,6 +187,37 @@ const tutors = ref([]);
 const timeSlots = ref([]);
 const showStudentSearch = ref(false);
 const saving = ref(false);
+const duplicateError = ref(null);
+const existingStudentsInfo = ref(null);
+const existingStudentIds = ref([]);
+const existingLessonId = ref(null);
+
+// ========================================
+// WATCH - Carica info slot esistente
+// ========================================
+
+watch(
+  () => [formData.value.tutorId, formData.value.timeSlotId],
+  async ([tutorId, timeSlotId]) => {
+    existingStudentsInfo.value = null;
+    existingStudentIds.value = [];
+    existingLessonId.value = null;
+    duplicateError.value = null;
+    
+    if (!tutorId || !timeSlotId) return;
+    
+    try {
+      const response = await lessonsAPI.checkDuplicate(tutorId, props.date, timeSlotId);
+      if (response.data.existingStudentIds?.length > 0) {
+        existingStudentIds.value = response.data.existingStudentIds;
+        existingLessonId.value = response.data.existingLessonId;
+        existingStudentsInfo.value = `Slot già ha: ${response.data.existingStudentNames.join(', ')}`;
+      }
+    } catch (error) {
+      console.error('Errore verifica slot:', error);
+    }
+  }
+);
 
 // ========================================
 // COMPUTED
@@ -206,7 +248,8 @@ const canSave = computed(() => {
   return (
     formData.value.tutorId &&
     formData.value.timeSlotId &&
-    formData.value.studenti.length > 0
+    formData.value.studenti.length > 0 &&
+    !duplicateError.value
   );
 });
 
@@ -217,7 +260,7 @@ const canSave = computed(() => {
 const loadTutors = async () => {
   try {
     const response = await tutorsAPI.getAll();
-    tutors.value = response.data.tutors || [];
+    tutors.value = response.data.data || response.data.tutors || [];
   } catch (error) {
     console.error('Errore caricamento tutor:', error);
   }
@@ -233,7 +276,23 @@ const loadTimeSlots = async () => {
 };
 
 const handleAddStudents = (students) => {
-  formData.value.studenti.push(...students);
+  // Filtra studenti già presenti nello slot
+  const duplicates = students.filter(s => existingStudentIds.value.includes(s.id));
+  const validStudents = students.filter(s => !existingStudentIds.value.includes(s.id));
+  
+  if (duplicates.length > 0) {
+    const duplicateNames = duplicates.map(s => `${s.firstName} ${s.lastName}`).join(', ');
+    duplicateError.value = `Studenti già presenti in questo slot: ${duplicateNames}`;
+    
+    // Aggiungi comunque gli studenti validi
+    if (validStudents.length > 0) {
+      formData.value.studenti.push(...validStudents);
+    }
+  } else {
+    formData.value.studenti.push(...students);
+    duplicateError.value = null;
+  }
+  
   showStudentSearch.value = false;
 };
 
@@ -250,21 +309,37 @@ const handleSave = async () => {
   saving.value = true;
 
   try {
-    const studentiData = formData.value.studenti.map(student => ({
+    // Prepara i dati degli studenti - combina quelli nuovi con quelli esistenti
+    const newStudentiData = formData.value.studenti.map(student => ({
       studentId: student.id,
       mezzaLezione: formData.value.mezzaLezione,
     }));
 
-    await lessonsAPI.create({
+    const payload = {
       tutorId: formData.value.tutorId,
       timeSlotId: formData.value.timeSlotId,
       data: props.date,
-      studenti: studentiData,
       forzaGruppo: formData.value.forzaGruppo,
       note: formData.value.note,
-    });
+    };
 
-    alert('✅ Lezione creata con successo!');
+    if (existingLessonId.value) {
+      // Lezione esistente: combina studenti esistenti con nuovi e fai UPDATE
+      const existingStudentiData = existingStudentIds.value.map(id => ({
+        studentId: id,
+        mezzaLezione: formData.value.mezzaLezione,
+      }));
+      payload.studenti = [...existingStudentiData, ...newStudentiData];
+      
+      await lessonsAPI.update(existingLessonId.value, payload);
+      alert('✅ Studenti aggiunti alla lezione esistente!');
+    } else {
+      // Nuova lezione: crea
+      payload.studenti = newStudentiData;
+      await lessonsAPI.create(payload);
+      alert('✅ Lezione creata con successo!');
+    }
+
     emit('saved');
   } catch (error) {
     console.error('Errore salvataggio:', error);
@@ -573,5 +648,33 @@ onMounted(() => {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ======================================== 
+   ERROR STATES
+======================================== */
+.form-select.error {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.error-message {
+  color: #dc2626;
+  font-size: 13px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+
+.info-message {
+  color: #1d4ed8;
+  font-size: 13px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border-radius: 6px;
+  border: 1px solid #bfdbfe;
 }
 </style>

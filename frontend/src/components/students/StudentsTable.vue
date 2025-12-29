@@ -227,100 +227,58 @@ const getProgressText = (pacchetto) => {
 };
 
 
+// ============================================
+// NUOVA LOGICA: Usa stati dal database
+// ============================================
 const getStates = (student) => {
   const states = [];
   
   if (!student.pacchettoAttivo) {
-    states.push({ type: 'inactive', label: 'Inattivo' });
+    states.push({ type: 'inactive', label: 'Nessun Pacchetto' });
     return states;
   }
 
   const pacchetto = student.pacchettoAttivo;
-  const oggi = new Date();
-  oggi.setHours(0, 0, 0, 0);
   
-  const dataScadenza = pacchetto.dataScadenza ? new Date(pacchetto.dataScadenza) : null;
-  if (dataScadenza) {
-    dataScadenza.setHours(0, 0, 0, 0);
-  }
-
-  const giorniAllaScadenza = dataScadenza 
-    ? Math.ceil((dataScadenza - oggi) / (1000 * 60 * 60 * 24))
-    : null;
-
-  const isPagato = pacchetto.importoResiduo === 0;
-  const isScaduto = dataScadenza && oggi > dataScadenza;
-  const isInScadenza = dataScadenza && giorniAllaScadenza >= 0 && giorniAllaScadenza <= 2;
+  // Usa gli stati dal database
+  let statiDb = pacchetto.stati || [];
   
-  const quantitaResidua = pacchetto.tipo === 'MENSILE' 
-    ? pacchetto.giorniResiduo 
-    : pacchetto.oreResiduo;
-  
-  const quantitaUsata = pacchetto.tipo === 'MENSILE'
-    ? pacchetto.giorniUsati
-    : pacchetto.oreUsate;
-
-  const quantitaTotale = pacchetto.tipo === 'MENSILE'
-    ? pacchetto.giorniTotali
-    : pacchetto.oreTotali;
-
-  const isEsaurito = quantitaResidua <= 0;
-  
-  // FIX: haUsatoExtra controlla se usato > totale (NON usato > acquistati)
-  const haUsatoExtra = quantitaUsata > quantitaTotale;
-
-  // REGOLA 1: PAGATO (priorità massima, esclude molti altri)
-  if (isPagato) {
-    states.push({ type: 'success', label: 'Pagato' });
-    
-    // Pagato + ore extra = DA RINNOVARE (ROSSO)
-    if (haUsatoExtra) {
-      states.push({ type: 'renew', label: 'Da Rinnovare' });
-    }
-
-    // Pagato + scaduto oggi + ore disponibili = ATTIVO
-    if (isScaduto && giorniAllaScadenza === 0 && quantitaResidua > 0) {
-      states.push({ type: 'success', label: 'Attivo' });
-    }
-
+  // Se non ci sono stati nel DB, mostra "Sconosciuto"
+  if (!Array.isArray(statiDb) || statiDb.length === 0) {
+    states.push({ type: 'inactive', label: 'Stato Sconosciuto' });
     return states;
   }
-
-  // REGOLA 2: SCADUTO (priorità alta)
-  if (isScaduto) {
-    states.push({ type: 'danger', label: 'Scaduto' });
+  
+  // LOGICA CHIUSO: se presente, mostra SOLO "Chiuso"
+  if (statiDb.includes('CHIUSO')) {
+    states.push({ type: 'closed', label: 'Chiuso' });
+    return states;
   }
-
-  // REGOLA 3: IN SCADENZA
-  if (isInScadenza && !isScaduto) {
-    states.push({ type: 'warning', label: 'In Scadenza' });
-  }
-
-  // REGOLA 4: ESAURITO
-  if (isEsaurito) {
-    states.push({ type: 'danger', label: 'Esaurito' });
-  }
-
-  // REGOLA 5: DA RINNOVARE (ore extra usate) - ROSSO
-  if (haUsatoExtra) {
-    states.push({ type: 'renew', label: 'Da Rinnovare' });
-  }
-
-  // REGOLA 6: PAG. SOSPESO (importo residuo + (in scadenza o scaduto o esaurito)) - GIALLO
-    if (pacchetto.importoResiduo > 0 && (isInScadenza || isScaduto || isEsaurito)) {
-    states.push({ type: 'payment-pending', label: 'Pag. Sospeso' });
+  
+  // Mapping stati DB -> label e type per CSS
+  const statoMapping = {
+    'ATTIVO': { type: 'success', label: 'Attivo' },
+    'DA_RINNOVARE': { type: 'warning', label: 'Da Rinnovare' },
+    'SCADUTO': { type: 'danger', label: 'Scaduto' },
+    'ESAURITO': { type: 'danger', label: 'Esaurito' },
+    'NEGATIVO': { type: 'danger', label: 'Negativo' },
+    'DA_PAGARE': { type: 'payment', label: 'Da Pagare' },
+    'PAGATO': { type: 'paid', label: 'Pagato' },
+  };
+  
+  // Converti ogni stato DB in oggetto per template
+  for (const stato of statiDb) {
+    const mapped = statoMapping[stato];
+    if (mapped) {
+      states.push(mapped);
     }
-
-  // REGOLA 7: ATTIVO (default se nessun problema grave)
-  if (!isScaduto && !isEsaurito && quantitaResidua > 0) {
-    states.push({ type: 'success', label: 'Attivo' });
   }
-
-  // Se nessuno stato, mostra almeno "Inattivo"
+  
+  // Fallback se nessuno stato mappato
   if (states.length === 0) {
-    states.push({ type: 'inactive', label: 'Inattivo' });
+    states.push({ type: 'inactive', label: 'Sconosciuto' });
   }
-
+  
   return states;
 };
 
@@ -519,40 +477,44 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* ATTIVO - Verde */
 .state-success {
   background: rgba(45, 206, 137, 0.15);
   color: #2dce89;
 }
 
+/* DA_RINNOVARE - Arancione */
 .state-warning {
   background: rgba(251, 99, 64, 0.15);
   color: #fb6340;
 }
 
+/* SCADUTO, ESAURITO, NEGATIVO - Rosso */
 .state-danger {
   background: rgba(245, 54, 92, 0.15);
   color: #f5365c;
 }
 
+/* Nessun Pacchetto / Sconosciuto - Grigio chiaro */
 .state-inactive {
   background: rgba(131, 146, 171, 0.15);
   color: #8392ab;
 }
 
-/* Badge "Da Rinnovare" - ROSSO */
-.state-renew {
-  background: rgba(245, 54, 92, 0.15);
-  color: #f5365c;
+/* CHIUSO - Grigio scuro */
+.state-closed {
+  background: rgba(52, 71, 103, 0.15);
+  color: #344767;
 }
 
-/* Badge "Pag. Sospeso" - GIALLO */
-.state-payment-pending {
+/* DA_PAGARE - Giallo */
+.state-payment {
   background: rgba(251, 191, 36, 0.15);
-  color: #fb6340;
+  color: #d97706;
 }
 
-/* Mantieni "info" per altri casi */
-.state-info {
+/* PAGATO - Blu */
+.state-paid {
   background: rgba(94, 114, 228, 0.15);
   color: #5e72e4;
 }

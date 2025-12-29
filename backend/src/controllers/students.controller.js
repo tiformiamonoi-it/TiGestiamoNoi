@@ -70,7 +70,7 @@ const getStudents = async (req, res, next) => {
           pacchetti: {
             where: {
               stati: {
-                hasSome: ['ATTIVO', 'DA_PAGARE', 'IN_SCADENZA', 'ESAURITO', 'SCADUTO']
+                hasSome: ['ATTIVO', 'DA_PAGARE', 'DA_RINNOVARE', 'ESAURITO', 'SCADUTO', 'NEGATIVO']
               },
             },
             select: {

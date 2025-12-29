@@ -209,13 +209,10 @@ const createLesson = async (req, res, next) => {
         const { studentId, mezzaLezione = false } = studentData;
 
         // Trova pacchetto valido (non chiuso)
-        // ✅ LOGICA AGGIORNATA: Prendi tutti i pacchetti non sospesi e filtra via quelli chiusi
+        // ✅ Prendi tutti i pacchetti dello studente e filtra via quelli chiusi
         const candidatePackages = await tx.package.findMany({
           where: {
             studentId: studentId,
-            NOT: [
-              { stati: { has: 'PAG_SOSPESO' } },
-            ],
           },
           orderBy: { createdAt: 'asc' }, // Più vecchio prima
         });
@@ -410,13 +407,10 @@ const updateLesson = async (req, res, next) => {
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // ✅ LOGICA AGGIORNATA: Prendi tutti i pacchetti non sospesi e filtra via quelli chiusi
+        // ✅ Prendi tutti i pacchetti dello studente e filtra via quelli chiusi
         const candidatePackages = await tx.package.findMany({
           where: {
             studentId: studentId,
-            NOT: [
-              { stati: { has: 'PAG_SOSPESO' } },
-            ],
           },
           orderBy: { createdAt: 'asc' }, // Più vecchio prima
         });
@@ -845,8 +839,8 @@ const getCalendarDays = async (req, res, next) => {
 
 /**
  * GET /api/lessons/calendar/alunni-disponibili
- * Ritorna alunni con pacchetto attivo
- * Un pacchetto è attivo se NON è (SCADUTO + PAGATO insieme)
+ * Ritorna alunni con pacchetti per la selezione lezioni
+ * Include anche studenti con pacchetti CHIUSI (saranno non selezionabili nel frontend)
  */
 const getAvailableStudents = async (req, res, next) => {
   try {
@@ -882,31 +876,112 @@ const getAvailableStudents = async (req, res, next) => {
       ],
     });
 
-    // Filtra: solo studenti con almeno un pacchetto "aperto"
-    // Un pacchetto è CHIUSO solo se ha SIA 'SCADUTO' SIA 'PAGATO'
-    const filteredStudents = students
-      .map(student => {
-        const pacchettiAttivi = student.pacchetti.filter(pkg => {
-          const stati = pkg.stati || [];
-          const isScaduto = stati.includes('SCADUTO');
-          const isPagato = stati.includes('PAGATO');
-          // Pacchetto è CHIUSO solo se entrambi true
-          const isChiuso = isScaduto && isPagato;
-          return !isChiuso;
-        });
+    // Filtra: solo studenti con almeno un pacchetto (anche CHIUSO)
+    const filteredStudents = students.filter(student => student.pacchetti.length > 0);
 
-        return {
-          ...student,
-          pacchetti: pacchettiAttivi,
-        };
-      })
-      .filter(student => student.pacchetti.length > 0);
-
-    console.log(`✅ getAvailableStudents: ${filteredStudents.length} studenti con pacchetti attivi`);
+    console.log(`✅ getAvailableStudents: ${filteredStudents.length} studenti con pacchetti`);
 
     res.json({ students: filteredStudents });
   } catch (error) {
     console.error('Errore getAvailableStudents:', error);
+    next(error);
+  }
+};
+
+// ============================================
+// CHECK TUTOR SLOT DUPLICATE
+// ============================================
+
+/**
+ * GET /api/lessons/check-duplicate
+ * Verifica se esistono studenti già presenti nello slot
+ * Query params: tutorId, date, timeSlotId, studentIds (comma-separated)
+ */
+const checkTutorSlotDuplicate = async (req, res, next) => {
+  try {
+    const { tutorId, date, timeSlotId, studentIds } = req.query;
+
+    if (!tutorId || !date || !timeSlotId) {
+      return res.status(400).json({
+        error: 'Parametri obbligatori: tutorId, date, timeSlotId'
+      });
+    }
+
+    // Crea range data per il giorno
+    const dataInizio = new Date(date);
+    dataInizio.setHours(0, 0, 0, 0);
+    const dataFine = new Date(date);
+    dataFine.setHours(23, 59, 59, 999);
+
+    // Cerca lezione esistente per questo tutor+slot+data
+    const existingLesson = await prisma.lesson.findFirst({
+      where: {
+        tutorId,
+        timeSlotId,
+        data: {
+          gte: dataInizio,
+          lte: dataFine,
+        },
+      },
+      include: {
+        timeSlot: true,
+        lessonStudents: {
+          include: {
+            student: {
+              select: { id: true, firstName: true, lastName: true }
+            }
+          }
+        }
+      }
+    });
+
+    // Se non esiste lezione per questo slot, tutto ok
+    if (!existingLesson) {
+      return res.json({
+        isDuplicate: false,
+        existingStudentIds: [],
+        existingStudentNames: []
+      });
+    }
+
+    // Se esiste, restituisci gli studenti già presenti
+    const existingStudentIds = existingLesson.lessonStudents.map(ls => ls.student.id);
+    const existingStudentNames = existingLesson.lessonStudents.map(
+      ls => `${ls.student.firstName} ${ls.student.lastName}`
+    );
+
+    // Se sono stati passati studentIds, verifica quali sono già presenti
+    if (studentIds) {
+      const requestedIds = studentIds.split(',');
+      const duplicateIds = requestedIds.filter(id => existingStudentIds.includes(id));
+      const duplicateNames = existingLesson.lessonStudents
+        .filter(ls => duplicateIds.includes(ls.student.id))
+        .map(ls => `${ls.student.firstName} ${ls.student.lastName}`);
+
+      if (duplicateIds.length > 0) {
+        return res.json({
+          isDuplicate: true,
+          message: `Studenti già presenti in questo slot: ${duplicateNames.join(', ')}`,
+          existingLessonId: existingLesson.id,
+          slot: `${existingLesson.timeSlot.oraInizio}-${existingLesson.timeSlot.oraFine}`,
+          existingStudentIds,
+          existingStudentNames,
+          duplicateStudentIds: duplicateIds,
+          duplicateStudentNames: duplicateNames
+        });
+      }
+    }
+
+    // Lo slot è occupato ma gli studenti richiesti non sono duplicati
+    res.json({
+      isDuplicate: false,
+      existingLessonId: existingLesson.id,
+      existingStudentIds,
+      existingStudentNames,
+      message: `Slot già ha: ${existingStudentNames.join(', ')} - puoi aggiungere altri studenti`
+    });
+  } catch (error) {
+    console.error('Errore checkTutorSlotDuplicate:', error);
     next(error);
   }
 };
@@ -924,4 +999,6 @@ module.exports = {
   deleteLessonsByTutorAndDate,
   getCalendarDays,
   getAvailableStudents,
+  checkTutorSlotDuplicate,
 };
+

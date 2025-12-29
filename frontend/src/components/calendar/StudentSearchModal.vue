@@ -30,13 +30,16 @@
           v-for="student in filteredStudents"
           :key="student.id"
           class="student-row"
-          :class="{ selected: selectedStudents.has(student.id) }"
+          :class="{ 
+            selected: selectedStudents.has(student.id),
+            disabled: isStudentChiuso(student)
+          }"
           @click="toggleStudent(student)"
         >
           <input
             type="checkbox"
             :checked="selectedStudents.has(student.id)"
-            :disabled="selectedIds.includes(student.id)"
+            :disabled="selectedIds.includes(student.id) || isStudentChiuso(student)"
             @click.stop="toggleStudent(student)"
           />
           
@@ -50,6 +53,14 @@
                 class="badge-already-added"
               >
                 ✓ Già aggiunto
+              </span>
+              
+              <!-- Badge pacchetto chiuso -->
+              <span
+                v-else-if="isStudentChiuso(student)"
+                class="badge-chiuso"
+              >
+                Pacchetto Chiuso
               </span>
             </div>
             
@@ -67,7 +78,7 @@
 
           <!-- Warning 0h -->
           <span
-            v-if="hasZeroHours(student)"
+            v-if="hasZeroHours(student) && !isStudentChiuso(student)"
             class="warning-badge"
             title="Ore residue a 0"
           >
@@ -162,8 +173,9 @@ const loadStudents = async () => {
 };
 
 const toggleStudent = (student) => {
-  // Non permettere toggle se già aggiunto alla lezione
+  // Non permettere toggle se già aggiunto alla lezione o pacchetto chiuso
   if (props.selectedIds.includes(student.id)) return;
+  if (isStudentChiuso(student)) return;
   
   if (selectedStudents.value.has(student.id)) {
     selectedStudents.value.delete(student.id);
@@ -173,6 +185,13 @@ const toggleStudent = (student) => {
   
   // Force reactivity
   selectedStudents.value = new Set(selectedStudents.value);
+};
+
+// Verifica se lo studente ha SOLO pacchetti chiusi
+const isStudentChiuso = (student) => {
+  if (!student.pacchetti || student.pacchetti.length === 0) return true;
+  // Se TUTTI i pacchetti sono CHIUSI, lo studente è "chiuso"
+  return student.pacchetti.every(pkg => pkg.stati?.includes('CHIUSO'));
 };
 
 const handleAdd = () => {
@@ -199,6 +218,9 @@ const getPackageResiduo = (pkg) => {
 };
 
 const getPackageClass = (pkg) => {
+  // Se pacchetto chiuso
+  if (pkg.stati?.includes('CHIUSO')) return 'package-closed';
+  
   if (pkg.tipo === 'ORE') {
     const ore = parseFloat(pkg.oreResiduo);
     if (ore <= 0) return 'package-warning';
@@ -403,6 +425,32 @@ onMounted(() => {
 .package-warning {
   background: #fee2e2;
   color: #991b1b;
+}
+
+/* Pacchetto chiuso - grigio */
+.package-closed {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* Badge "Pacchetto Chiuso" */
+.badge-chiuso {
+  padding: 2px 8px;
+  background: #e5e7eb;
+  color: #6b7280;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Riga studente disabilitato */
+.student-row.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.student-row.disabled:hover {
+  background: transparent;
 }
 
 .warning-badge {

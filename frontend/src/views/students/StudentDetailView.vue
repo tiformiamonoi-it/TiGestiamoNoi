@@ -1121,15 +1121,17 @@ const getProgressText = (pkg) => {
 };
 
 
-// Badge stati
+// Badge stati - Nuova mappatura stati
 const getStatoBadgeClass = (stato) => {
   const map = {
     'ATTIVO': 'stato-attivo',
+    'DA_RINNOVARE': 'stato-da-rinnovare',
     'SCADUTO': 'stato-scaduto',
     'ESAURITO': 'stato-esaurito',
-    'ORE_NEGATIVE': 'stato-ore-negative',
-    'PAGATO': 'stato-pagato',
+    'NEGATIVO': 'stato-negativo',
     'DA_PAGARE': 'stato-da-pagare',
+    'PAGATO': 'stato-pagato',
+    'CHIUSO': 'stato-chiuso',
   };
   return map[stato] || '';
 };
@@ -2231,35 +2233,52 @@ onMounted(() => {
   letter-spacing: 0.3px;
 }
 
+/* ATTIVO - Verde */
 .stato-attivo {
   background: rgba(45, 206, 137, 0.15);
   color: #2dce89;
 }
 
+/* DA_RINNOVARE - Arancione */
+.stato-da-rinnovare {
+  background: rgba(251, 99, 64, 0.15);
+  color: #fb6340;
+}
+
+/* SCADUTO - Rosso */
 .stato-scaduto {
   background: rgba(245, 54, 92, 0.15);
   color: #f5365c;
 }
 
+/* ESAURITO - Rosso */
 .stato-esaurito {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  background: rgba(245, 54, 92, 0.15);
+  color: #f5365c;
 }
 
-
-.stato-ore-negative {
+/* NEGATIVO - Rosso */
+.stato-negativo {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
 }
 
+/* DA_PAGARE - Giallo */
+.stato-da-pagare {
+  background: rgba(251, 191, 36, 0.15);
+  color: #d97706;
+}
+
+/* PAGATO - Blu */
 .stato-pagato {
   background: rgba(59, 130, 246, 0.15);
   color: #3b82f6;
 }
 
-.stato-da-pagare {
-  background: rgba(156, 163, 175, 0.15);
-  color: #9ca3af;
+/* CHIUSO - Grigio scuro */
+.stato-chiuso {
+  background: rgba(52, 71, 103, 0.15);
+  color: #344767;
 }
 
 /* Progress Bar */
