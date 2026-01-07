@@ -17,6 +17,8 @@ const getMovimenti = async (req, res, next) => {
             dataFine,
             tipo,
             categoria,
+            metodo,
+            origine,
             page = 1,
             limit = 50,
             search
@@ -45,14 +47,48 @@ const getMovimenti = async (req, res, next) => {
         if (categoria && categoria !== 'tutte') {
             where.categoria = categoria;
         }
+        // Usiamo un array per combinare i filtri che richiedono OR
+        const andConditions = [...(where.AND || [])];
+
+        // Filtro metodo pagamento (deve controllare sia il campo diretto che i pagamenti collegati)
+        if (metodo && metodo !== 'tutti') {
+            const metodoUpper = metodo.toUpperCase();
+            andConditions.push({
+                OR: [
+                    { metodoPagamento: metodoUpper },
+                    { payment: { metodoPagamento: metodoUpper } },
+                    { tutorPayment: { metodo: metodoUpper } }
+                ]
+            });
+        }
+
+        // Filtro origine (automatico/manuale)
+        if (origine === 'automatico') {
+            andConditions.push({
+                OR: [
+                    { paymentId: { not: null } },
+                    { tutorPaymentId: { not: null } }
+                ]
+            });
+        } else if (origine === 'manuale') {
+            andConditions.push({ paymentId: null });
+            andConditions.push({ tutorPaymentId: null });
+        }
 
         // Ricerca testuale
         if (search) {
-            where.OR = [
-                { descrizione: { contains: search, mode: 'insensitive' } },
-                { categoria: { contains: search, mode: 'insensitive' } },
-                { note: { contains: search, mode: 'insensitive' } }
-            ];
+            andConditions.push({
+                OR: [
+                    { descrizione: { contains: search, mode: 'insensitive' } },
+                    { categoria: { contains: search, mode: 'insensitive' } },
+                    { note: { contains: search, mode: 'insensitive' } }
+                ]
+            });
+        }
+
+        // Applica le condizioni AND se ce ne sono
+        if (andConditions.length > 0) {
+            where.AND = andConditions;
         }
 
         const [movimenti, total] = await Promise.all([
@@ -81,6 +117,22 @@ const getMovimenti = async (req, res, next) => {
             prisma.accountingEntry.count({ where })
         ]);
 
+        // Arricchisci movimenti con metodo pagamento (da payment o tutorPayment se automatico)
+        const movimentiArricchiti = movimenti.map(mov => {
+            let metodoEffettivo = mov.metodoPagamento;
+            // Se non c'è metodo e c'è un pagamento collegato, usa il suo metodo
+            if (!metodoEffettivo && mov.payment) {
+                metodoEffettivo = mov.payment.metodoPagamento;
+            }
+            if (!metodoEffettivo && mov.tutorPayment) {
+                metodoEffettivo = mov.tutorPayment.metodo;
+            }
+            return {
+                ...mov,
+                metodoPagamentoEffettivo: metodoEffettivo || 'ALTRO'
+            };
+        });
+
         // Calcola totali per la pagina
         const totals = await prisma.accountingEntry.groupBy({
             by: ['tipo'],
@@ -89,7 +141,7 @@ const getMovimenti = async (req, res, next) => {
         });
 
         res.json({
-            movimenti,
+            movimenti: movimentiArricchiti,
             pagination: {
                 total,
                 page: parseInt(page),
@@ -157,6 +209,41 @@ const getStats = async (req, res, next) => {
         );
         const margineLordo = entrateTotali - costiTutor;
 
+        // Breakdown Banca/Contanti per entrate e uscite
+        // Per calcolare questo dobbiamo recuperare tutti i movimenti e sommare per metodo
+        const allMovimenti = await prisma.accountingEntry.findMany({
+            where,
+            select: {
+                tipo: true,
+                importo: true,
+                metodoPagamento: true,
+                payment: { select: { metodoPagamento: true } },
+                tutorPayment: { select: { metodo: true } }
+            }
+        });
+
+        // Calcola totali per metodo
+        let entrateBanca = 0, entrateContanti = 0;
+        let usciteBanca = 0, usciteContanti = 0;
+
+        for (const mov of allMovimenti) {
+            const importo = parseFloat(mov.importo || 0);
+            // Determina metodo effettivo
+            let metodo = mov.metodoPagamento;
+            if (!metodo && mov.payment) metodo = mov.payment.metodoPagamento;
+            if (!metodo && mov.tutorPayment) metodo = mov.tutorPayment.metodo;
+
+            const isBanca = metodo === 'BONIFICO' || metodo === 'POS';
+
+            if (mov.tipo === 'ENTRATA') {
+                if (isBanca) entrateBanca += importo;
+                else entrateContanti += importo;
+            } else if (mov.tipo === 'USCITA') {
+                if (isBanca) usciteBanca += importo;
+                else usciteContanti += importo;
+            }
+        }
+
         // Calcolo giorni periodo per cashflow medio
         let giorniPeriodo = 30;
         if (dataInizio && dataFine) {
@@ -172,6 +259,40 @@ const getStats = async (req, res, next) => {
         // Conteggio movimenti
         const countMovimenti = await prisma.accountingEntry.count({ where });
 
+        // ===== Break-even Point =====
+        // Recupera le spese fisse dalla configurazione
+        const speseFisseConfigs = await prisma.systemConfig.findMany({
+            where: { category: 'spese_fisse' }
+        });
+
+        let costiFissiMensili = 0;
+        for (const config of speseFisseConfigs) {
+            costiFissiMensili += parseFloat(config.value) || 0;
+        }
+
+        // Proporziona i costi fissi in base al periodo selezionato
+        // Se il periodo è 15 giorni, i costi sono la metà di quelli mensili
+        // Formula: costiFissiPeriodo = costiFissiMensili × (giorniPeriodo / 30)
+        const costiFissiProporzionati = costiFissiMensili * (giorniPeriodo / 30);
+
+        // Calcola Break-even (usa MARGINE LORDO = entrate - costi tutor)
+        // Il margine lordo non include le spese fisse, così non le contiamo due volte
+        let breakEvenRaggiunto = false;
+        let breakEvenMancante = 0;
+        let breakEvenPercentuale = 0;
+
+        if (costiFissiProporzionati > 0) {
+            if (margineLordo >= costiFissiProporzionati) {
+                breakEvenRaggiunto = true;
+                breakEvenMancante = 0;
+                breakEvenPercentuale = 100;
+            } else {
+                breakEvenRaggiunto = false;
+                breakEvenMancante = costiFissiProporzionati - margineLordo;
+                breakEvenPercentuale = Math.round((margineLordo / costiFissiProporzionati) * 100);
+            }
+        }
+
         res.json({
             entrateTotali,
             usciteTotali,
@@ -181,6 +302,19 @@ const getStats = async (req, res, next) => {
             margineNetto: Math.round(margineNetto * 10) / 10,
             giorniPeriodo,
             countMovimenti,
+            // Breakdown Banca/Contanti
+            entrateBanca,
+            entrateContanti,
+            usciteBanca,
+            usciteContanti,
+            // Break-even Point
+            costiFissiMensili,
+            costiFissiProporzionati: Math.round(costiFissiProporzionati * 100) / 100,
+            breakEven: {
+                raggiunto: breakEvenRaggiunto,
+                mancante: Math.round(breakEvenMancante * 100) / 100,
+                percentuale: breakEvenPercentuale
+            },
             entratePerCategoria: entratePerCategoria.map(c => ({
                 categoria: c.categoria || 'Altro',
                 totale: parseFloat(c._sum.importo || 0)
@@ -202,7 +336,7 @@ const getStats = async (req, res, next) => {
  */
 const createMovimento = async (req, res, next) => {
     try {
-        const { tipo, importo, descrizione, categoria, data, note } = req.body;
+        const { tipo, importo, descrizione, categoria, data, note, metodoPagamento, fatturaEmessa } = req.body;
 
         if (!tipo || !importo || !descrizione) {
             return res.status(400).json({ error: 'tipo, importo e descrizione sono obbligatori' });
@@ -215,7 +349,9 @@ const createMovimento = async (req, res, next) => {
                 descrizione,
                 categoria: categoria || 'Altro',
                 data: data ? new Date(data) : new Date(),
-                note
+                note,
+                metodoPagamento: metodoPagamento?.toUpperCase() || null,
+                fatturaEmessa: fatturaEmessa || false
             }
         });
 
@@ -229,6 +365,7 @@ const createMovimento = async (req, res, next) => {
     }
 };
 
+
 /**
  * PUT /api/accounting/:id
  * Modifica movimento (solo manuali o admin)
@@ -236,7 +373,7 @@ const createMovimento = async (req, res, next) => {
 const updateMovimento = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { tipo, importo, descrizione, categoria, data, note } = req.body;
+        const { tipo, importo, descrizione, categoria, data, note, metodoPagamento, fatturaEmessa } = req.body;
 
         const existing = await prisma.accountingEntry.findUnique({
             where: { id }
@@ -246,23 +383,61 @@ const updateMovimento = async (req, res, next) => {
             return res.status(404).json({ error: 'Movimento non trovato' });
         }
 
-        // Solo admin può modificare movimenti automatici
+        // Verifica se è un movimento automatico
         const isAutomatic = existing.paymentId || existing.tutorPaymentId;
+
+        // Per movimenti automatici, blocca modifica importo (non si può modificare importo pacchetto da qui)
+        if (isAutomatic && importo && parseFloat(importo) !== parseFloat(existing.importo)) {
+            return res.status(403).json({
+                error: 'Non è possibile modificare l\'importo di un pagamento pacchetto dalla contabilità. Modifica il pagamento dalla scheda alunno.'
+            });
+        }
+
+        // Solo admin può modificare altri campi dei movimenti automatici
         if (isAutomatic && req.user?.role !== 'ADMIN') {
             return res.status(403).json({ error: 'Solo admin può modificare movimenti automatici' });
         }
+
+        // Prepara i dati per l'aggiornamento
+        const nuovaData = data ? new Date(data) : existing.data;
+        const nuovoMetodo = metodoPagamento?.toUpperCase() || existing.metodoPagamento;
 
         const movimento = await prisma.accountingEntry.update({
             where: { id },
             data: {
                 tipo: tipo?.toUpperCase() || existing.tipo,
-                importo: importo ? parseFloat(importo) : existing.importo,
+                // Per movimenti automatici non permettiamo modifica importo
+                importo: isAutomatic ? existing.importo : (importo ? parseFloat(importo) : existing.importo),
                 descrizione: descrizione || existing.descrizione,
                 categoria: categoria || existing.categoria,
-                data: data ? new Date(data) : existing.data,
-                note: note !== undefined ? note : existing.note
+                data: nuovaData,
+                note: note !== undefined ? note : existing.note,
+                metodoPagamento: nuovoMetodo,
+                fatturaEmessa: fatturaEmessa !== undefined ? fatturaEmessa : existing.fatturaEmessa
             }
         });
+
+        // Se è collegato a un pagamento pacchetto, sincronizza data e metodo
+        if (existing.paymentId) {
+            await prisma.payment.update({
+                where: { id: existing.paymentId },
+                data: {
+                    dataPagamento: nuovaData,
+                    metodoPagamento: nuovoMetodo
+                }
+            });
+        }
+
+        // Se è collegato a un pagamento tutor, sincronizza data e metodo
+        if (existing.tutorPaymentId) {
+            await prisma.tutorPayment.update({
+                where: { id: existing.tutorPaymentId },
+                data: {
+                    dataPagamento: nuovaData,
+                    metodo: nuovoMetodo
+                }
+            });
+        }
 
         res.json({
             message: 'Movimento aggiornato con successo',
@@ -283,7 +458,12 @@ const deleteMovimento = async (req, res, next) => {
         const { id } = req.params;
 
         const existing = await prisma.accountingEntry.findUnique({
-            where: { id }
+            where: { id },
+            include: {
+                payment: {
+                    include: { package: true }
+                }
+            }
         });
 
         if (!existing) {
@@ -296,6 +476,37 @@ const deleteMovimento = async (req, res, next) => {
             return res.status(403).json({ error: 'Solo admin può eliminare movimenti automatici' });
         }
 
+        // Se è collegato a un pagamento pacchetto, elimina anche il pagamento e aggiorna il pacchetto
+        if (existing.paymentId && existing.payment) {
+            const payment = existing.payment;
+            const packageData = payment.package;
+
+            if (packageData) {
+                // Aggiorna gli importi del pacchetto
+                const importoPagamento = parseFloat(payment.importo);
+                const nuovoImportoPagato = parseFloat(packageData.importoPagato) - importoPagamento;
+                const nuovoImportoResiduo = parseFloat(packageData.importoResiduo) + importoPagamento;
+
+                await prisma.package.update({
+                    where: { id: packageData.id },
+                    data: {
+                        importoPagato: nuovoImportoPagato,
+                        importoResiduo: nuovoImportoResiduo
+                    }
+                });
+            }
+
+            // Elimina il pagamento (che eliminerà a cascata l'accounting entry grazie alla relazione)
+            await prisma.payment.delete({
+                where: { id: existing.paymentId }
+            });
+
+            return res.json({
+                message: 'Movimento e pagamento pacchetto eliminati con successo. Residuo pacchetto aggiornato.'
+            });
+        }
+
+        // Per movimenti manuali o tutor payments, elimina solo il movimento
         await prisma.accountingEntry.delete({
             where: { id }
         });

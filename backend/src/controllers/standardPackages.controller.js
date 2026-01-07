@@ -77,9 +77,9 @@ const createStandardPackage = async (req, res, next) => {
       data: req.body,
     });
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Pacchetto standard creato con successo',
-      package: package_ 
+      package: package_
     });
   } catch (error) {
     next(error);
@@ -104,9 +104,9 @@ const updateStandardPackage = async (req, res, next) => {
       data: req.body,
     });
 
-    res.json({ 
+    res.json({
       message: 'Pacchetto standard aggiornato con successo',
-      package: package_ 
+      package: package_
     });
   } catch (error) {
     next(error);
@@ -115,20 +115,37 @@ const updateStandardPackage = async (req, res, next) => {
 
 /**
  * DELETE /api/standard-packages/:id
- * Disattiva pacchetto standard
+ * Elimina pacchetto standard (solo se non usato da nessun alunno)
  */
 const deleteStandardPackage = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const package_ = await prisma.standardPackage.update({
+    // Verifica se il pacchetto è usato da qualche alunno
+    const package_ = await prisma.standardPackage.findUnique({
       where: { id },
-      data: { active: false },
+      include: {
+        _count: { select: { pacchetti: true } }
+      }
     });
 
-    res.json({ 
-      message: 'Pacchetto standard disattivato con successo',
-      package: package_ 
+    if (!package_) {
+      return res.status(404).json({ error: 'Pacchetto standard non trovato' });
+    }
+
+    if (package_._count.pacchetti > 0) {
+      return res.status(400).json({
+        error: `Impossibile eliminare: questo pacchetto è presente nella storia di ${package_._count.pacchetti} alunno/i. Puoi solo disattivarlo.`
+      });
+    }
+
+    // Elimina definitivamente solo se non è usato
+    await prisma.standardPackage.delete({
+      where: { id }
+    });
+
+    res.json({
+      message: 'Pacchetto standard eliminato con successo'
     });
   } catch (error) {
     next(error);

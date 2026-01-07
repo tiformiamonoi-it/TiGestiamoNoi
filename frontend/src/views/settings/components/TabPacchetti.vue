@@ -173,7 +173,7 @@ async function toggleActive(pkg) {
 
 async function confirmDelete(pkg) {
   if (pkg._count?.pacchetti > 0) {
-    alert(`⚠️ Impossibile eliminare: questo pacchetto è usato da ${pkg._count.pacchetti} alunni.`);
+    alert(`⚠️ Impossibile eliminare: questo pacchetto è presente nella storia di ${pkg._count.pacchetti} alunno/i. Puoi solo disattivarlo.`);
     return;
   }
 
@@ -184,7 +184,8 @@ async function confirmDelete(pkg) {
     loadPackages();
   } catch (error) {
     console.error('Errore eliminazione:', error);
-    alert('❌ Errore durante l\'eliminazione');
+    const errorMsg = error.response?.data?.error || 'Errore durante l\'eliminazione';
+    alert(`❌ ${errorMsg}`);
   }
 }
 

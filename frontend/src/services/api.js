@@ -32,15 +32,36 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Gestisci 401 (non autenticato) e 403 (token scaduto/non valido)
-    // Il backend restituisce 403 per token scaduti (TokenExpiredError)
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      // Evita redirect multipli se siamo già sulla pagina di login
+    // Gestisci 401 (non autenticato)
+    // Per 403, distingui tra errori di autorizzazione business (hanno error message) 
+    // e token scaduto/non valido (non hanno messaggio specifico)
+    if (error.response?.status === 401) {
+      // 401 = sempre logout
       if (window.location.pathname !== '/login') {
-        console.warn('🔐 Sessione scaduta o token non valido - logout automatico');
+        console.warn('🔐 Sessione scaduta - logout automatico');
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
         window.location.href = '/login';
+      }
+    } else if (error.response?.status === 403) {
+      // 403 potrebbe essere:
+      // - Token scaduto (TokenExpiredError) -> logout
+      // - Errore di autorizzazione business logic -> propaga l'errore
+      const errorMessage = error.response?.data?.error;
+
+      // Se c'è un messaggio di errore specifico dal backend, è un errore di business logic
+      // Non fare logout, lascia che il frontend gestisca l'errore
+      if (errorMessage && typeof errorMessage === 'string') {
+        console.warn('⛔ Errore autorizzazione:', errorMessage);
+        // Non fare logout, propaga l'errore normalmente
+      } else {
+        // Nessun messaggio specifico = probabilmente token scaduto
+        if (window.location.pathname !== '/login') {
+          console.warn('🔐 Token non valido - logout automatico');
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);

@@ -577,18 +577,29 @@ const getActiveSlotsForDay = (giorno) => {
 
 // Ottieni studenti in uno slot specifico
 const getStudentsInSlot = (giorno, tutorId, slotStart) => {
-  const lesson = giorno.lezioni.find(
+  // ✅ FIX: Trova TUTTE le lezioni nello slot (non solo la prima!)
+  const lessons = giorno.lezioni.filter(
     l => l.tutor?.id === tutorId && l.timeSlot?.oraInizio === slotStart
   );
 
-  if (!lesson || !lesson.lessonStudents) return [];
+  if (!lessons || lessons.length === 0) return [];
 
-  return lesson.lessonStudents.map(ls => ({
-    id: ls.student.id,
-    firstName: ls.student.firstName,
-    lastName: ls.student.lastName,
-    mezzaLezione: ls.mezzaLezione || false,
-  }));
+  // ✅ Unisci tutti gli studenti da tutte le lezioni nello slot
+  const studentsMap = new Map();
+  lessons.forEach(lesson => {
+    lesson.lessonStudents?.forEach(ls => {
+      if (!studentsMap.has(ls.student.id)) {
+        studentsMap.set(ls.student.id, {
+          id: ls.student.id,
+          firstName: ls.student.firstName,
+          lastName: ls.student.lastName,
+          mezzaLezione: ls.mezzaLezione || false,
+        });
+      }
+    });
+  });
+
+  return Array.from(studentsMap.values());
 };
 
 // Class per cella slot
@@ -602,14 +613,17 @@ const getSlotCellClass = (giorno, tutorId, slotStart) => {
 
 // Verifica se lo slot ha almeno uno studente con mezza lezione
 const isHalfLessonSlot = (giorno, tutorId, slotStart) => {
-  const lesson = giorno.lezioni.find(
+  // ✅ FIX: Controlla TUTTE le lezioni nello slot
+  const lessons = giorno.lezioni.filter(
     l => l.tutor?.id === tutorId && l.timeSlot?.oraInizio === slotStart
   );
 
-  if (!lesson || !lesson.lessonStudents) return false;
+  if (!lessons || lessons.length === 0) return false;
 
-  // Ritorna true se ALMENO uno studente ha mezzaLezione = true
-  return lesson.lessonStudents.some(ls => ls.mezzaLezione === true);
+  // Ritorna true se ALMENO uno studente in qualsiasi lezione ha mezzaLezione = true
+  return lessons.some(lesson => 
+    lesson.lessonStudents?.some(ls => ls.mezzaLezione === true)
+  );
 };
 
 // Modal gestione slot

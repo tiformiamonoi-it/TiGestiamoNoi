@@ -38,14 +38,15 @@
           <!-- Categoria -->
           <div class="form-group">
             <label class="form-label">Categoria <span class="required">*</span></label>
-            <input v-model="form.categoria" type="text" class="form-input" required placeholder="Es: Medie, Superiori, Elementari" list="categorie-list" />
-            <datalist id="categorie-list">
-              <option value="Elementari" />
-              <option value="Medie" />
-              <option value="Superiori" />
-              <option value="Università" />
-              <option value="Preparazione Esami" />
-            </datalist>
+            <select v-model="form.categoria" class="form-input" required>
+              <option value="" disabled>Seleziona categoria...</option>
+              <option value="Elementari">Elementari</option>
+              <option value="Medie">Medie</option>
+              <option value="Superiori">Superiori</option>
+              <option value="Università">Università</option>
+              <option value="Concorsi">Concorsi</option>
+              <option value="Altro">Altro</option>
+            </select>
           </div>
 
           <!-- Ore (per tipo ORE) -->

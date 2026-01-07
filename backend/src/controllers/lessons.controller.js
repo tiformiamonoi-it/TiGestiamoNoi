@@ -717,8 +717,14 @@ const getCalendarDays = async (req, res, next) => {
       return res.status(400).json({ error: 'Parametri obbligatori: anno, mese' });
     }
 
-    const dataInizio = new Date(parseInt(anno), parseInt(mese) - 1, 1);
-    const dataFine = new Date(parseInt(anno), parseInt(mese), 0, 23, 59, 59);
+    // ✅ FIX: Use UTC dates to avoid timezone issues
+    const dataInizio = new Date(Date.UTC(parseInt(anno), parseInt(mese) - 1, 1, 0, 0, 0));
+    const dataFine = new Date(Date.UTC(parseInt(anno), parseInt(mese), 0, 23, 59, 59));
+
+    console.log('📅 Calendar Query DEBUG:');
+    console.log('  - anno:', anno, 'mese:', mese);
+    console.log('  - dataInizio:', dataInizio.toISOString());
+    console.log('  - dataFine:', dataFine.toISOString());
 
     const where = {
       data: {
@@ -765,6 +771,9 @@ const getCalendarDays = async (req, res, next) => {
         { timeSlot: { oraInizio: 'asc' } },
       ],
     });
+
+    console.log('  - Lessons trovate:', lessons.length);
+    lessons.forEach(l => console.log('    → Lesson:', l.id, 'data:', l.data.toISOString()));
 
     const giorniMap = new Map();
 

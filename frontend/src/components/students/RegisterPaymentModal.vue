@@ -257,14 +257,10 @@ const tipoOptions = computed(() => {
 
   const options = [];
 
-  // Se importo < residuo
+  // Se importo < residuo → mostra sia Acconto che Integrazione
   if (importo < residuo) {
-    if (isFirstPayment.value) {
-      options.push({ value: 'ACCONTO', label: 'Acconto' });
-    }
-    if (!isFirstPayment.value) {
-      options.push({ value: 'INTEGRAZIONE', label: 'Integrazione' });
-    }
+    options.push({ value: 'ACCONTO', label: 'Acconto' });
+    options.push({ value: 'INTEGRAZIONE', label: 'Integrazione' });
   }
 
   // Se importo == residuo (sempre disponibile SALDO)
@@ -286,9 +282,9 @@ const helpMessage = computed(() => {
 
   if (importo < residuo) {
     if (isFirstPayment.value) {
-      return '💡 Importo parziale - seleziona "Acconto"';
+      return '💡 Consigliato "Acconto" per il primo pagamento parziale';
     } else {
-      return '💡 Importo parziale - seleziona "Integrazione"';
+      return '💡 Consigliato "Integrazione" per i pagamenti successivi';
     }
   }
 

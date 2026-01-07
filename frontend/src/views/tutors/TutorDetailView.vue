@@ -20,9 +20,40 @@
         <router-link to="/tutors" class="back-link">
           ← Torna a Elenco Tutor
         </router-link>
-        <div class="context-menu">
-          <!-- TODO: Implementare menu contestuale (Export, Stampa, etc.) -->
-          <!-- <button class="btn-icon">⋮</button> -->
+        <div class="menu-azioni">
+          <button @click="showMenu = !showMenu" class="btn-menu">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"></circle>
+              <circle cx="19" cy="12" r="1"></circle>
+              <circle cx="5" cy="12" r="1"></circle>
+            </svg>
+          </button>
+          <div v-if="showMenu" class="dropdown-menu">
+            <!-- Bottone condizionale Attiva/Disattiva -->
+            <button v-if="tutor.active" @click="toggleActive" class="menu-item">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="4" width="12" height="16" rx="1"></rect>
+                <rect x="9" y="9" width="6" height="6"></rect>
+              </svg>
+              Disattiva Tutor
+            </button>
+            <button v-else @click="toggleActive" class="menu-item success">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              Attiva Tutor
+            </button>
+
+            <button @click="deleteTutor" class="menu-item danger">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+              Elimina Tutor
+            </button>
+          </div>
         </div>
       </div>
 
@@ -250,6 +281,7 @@ import PaymentModal from '@/components/tutors/PaymentModal.vue';
 import TutorRatingModal from '@/components/tutors/TutorRatingModal.vue';
 import TutorEditModal from '@/components/tutors/TutorEditModal.vue';
 import PaymentEditModal from '@/components/tutors/PaymentEditModal.vue';
+import api from '@/services/api';
 
 const route = useRoute();
 const router = useRouter();
@@ -264,6 +296,7 @@ const showSubjectsModal = ref(false);
 const showPaymentModal = ref(false);
 const showRatingModal = ref(false);
 const showEditModal = ref(false);
+const showMenu = ref(false);
 const tutorsForPayment = ref([]);
 
 const tabs = [
@@ -620,6 +653,39 @@ async function handleEditPaymentSave(updatedPayment) {
     alert('Errore salvataggio pagamento: ' + e.message);
   }
 }
+
+// Toggle Active/Inactive
+async function toggleActive() {
+  showMenu.value = false;
+  const newState = !tutor.value.active;
+  const action = newState ? 'attivare' : 'disattivare';
+  
+  if (!confirm(`Sei sicuro di voler ${action} ${tutor.value.firstName} ${tutor.value.lastName}?`)) return;
+  
+  try {
+    await tutorStore.updateTutor(tutorId, { active: newState });
+    await fetchTutor();
+  } catch (e) {
+    console.error('Errore toggle stato:', e);
+    alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+  }
+}
+
+// Delete Tutor
+async function deleteTutor() {
+  showMenu.value = false;
+  if (!confirm(`Sei sicuro di voler eliminare ${tutor.value.firstName} ${tutor.value.lastName}?\n\nQuesta azione è irreversibile.`)) return;
+  
+  try {
+    await api.delete(`/tutors/${tutorId}`);
+    alert('✅ Tutor eliminato con successo!');
+    router.push('/tutors');
+  } catch (e) {
+    console.error('Errore eliminazione:', e);
+    const errorMsg = e.response?.data?.error || 'Errore durante l\'eliminazione';
+    alert(`❌ ${errorMsg}`);
+  }
+}
 </script>
 
 <style scoped>
@@ -668,6 +734,75 @@ async function handleEditPaymentSave(updatedPayment) {
 
 .back-link:hover {
   color: #5e72e4;
+}
+
+/* Dropdown Menu */
+.menu-azioni {
+  position: relative;
+}
+
+.btn-menu {
+  padding: 8px;
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #8392ab;
+  transition: all 0.2s;
+}
+
+.btn-menu:hover {
+  background: #f8f9fa;
+  color: #344767;
+}
+
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 8px;
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: #344767;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: #f8f9fa;
+}
+
+.menu-item.success {
+  color: #2dce89;
+}
+
+.menu-item.success:hover {
+  background: rgba(45, 206, 137, 0.1);
+}
+
+.menu-item.danger {
+  color: #f5365c;
+}
+
+.menu-item.danger:hover {
+  background: rgba(245, 54, 92, 0.1);
 }
 
 /* Profile Header */
@@ -801,6 +936,41 @@ async function handleEditPaymentSave(updatedPayment) {
 .btn-outline:hover {
   background: #f8f9fa;
   border-color: #d1d7e0;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #2dce89, #2dcecc);
+  color: white;
+}
+
+.btn-success:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(45, 206, 137, 0.3);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, #fb6340, #fbb140);
+  color: white;
+}
+
+.btn-warning:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(251, 99, 64, 0.3);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #f5365c, #f56036);
+  color: white;
+}
+
+.btn-danger:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 54, 92, 0.3);
+}
+
+.actions-spacer {
+  flex: 1;
+  min-width: 20px;
 }
 
 /* Alerts */

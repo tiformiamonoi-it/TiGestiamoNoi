@@ -130,6 +130,21 @@
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
               </button>
+              <button 
+                @click="$emit('toggle-active', tutor)"
+                class="btn-icon"
+                :class="tutor.active ? 'text-warning' : 'text-success'"
+                :title="tutor.active ? 'Disattiva Tutor' : 'Attiva Tutor'"
+              >
+                {{ tutor.active ? '🔴' : '🟢' }}
+              </button>
+              <button 
+                @click="$emit('delete', tutor)"
+                class="btn-icon text-danger"
+                title="Elimina Tutor"
+              >
+                🗑️
+              </button>
             </div>
           </td>
         </tr>
@@ -165,7 +180,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue', 'view', 'pay', 'sort']);
+const emit = defineEmits(['update:modelValue', 'view', 'pay', 'sort', 'toggle-active', 'delete']);
 
 const selectedIds = computed({
   get: () => props.modelValue,
@@ -434,6 +449,14 @@ function getInitials(tutor) {
 
 .text-success {
   color: #2dce89;
+}
+
+.text-warning {
+  color: #fb6340;
+}
+
+.text-danger {
+  color: #f5365c;
 }
 
 /* Empty State */

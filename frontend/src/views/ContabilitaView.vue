@@ -46,6 +46,10 @@
         <div class="stat-content">
           <div class="stat-value">{{ formatCurrency(stats.entrateTotali) }}</div>
           <div class="stat-label">ENTRATE</div>
+          <div class="stat-breakdown">
+            <span>Banca: {{ formatCurrency(stats.entrateBanca) }}</span>
+            <span>Cont.: {{ formatCurrency(stats.entrateContanti) }}</span>
+          </div>
         </div>
       </div>
       
@@ -54,6 +58,10 @@
         <div class="stat-content">
           <div class="stat-value">{{ formatCurrency(stats.usciteTotali) }}</div>
           <div class="stat-label">USCITE</div>
+          <div class="stat-breakdown">
+            <span>Banca: {{ formatCurrency(stats.usciteBanca) }}</span>
+            <span>Cont.: {{ formatCurrency(stats.usciteContanti) }}</span>
+          </div>
         </div>
       </div>
       
@@ -61,7 +69,10 @@
         <div class="stat-icon">💰</div>
         <div class="stat-content">
           <div class="stat-value">{{ formatCurrency(stats.bilancio) }}</div>
-          <div class="stat-label">BILANCIO</div>
+          <div class="stat-label">
+            BILANCIO
+            <span class="info-tooltip" title="Differenza tra entrate totali e uscite totali nel periodo selezionato">ⓘ</span>
+          </div>
         </div>
       </div>
       
@@ -69,7 +80,10 @@
         <div class="stat-icon">📊</div>
         <div class="stat-content">
           <div class="stat-value">{{ stats.margineNetto }}%</div>
-          <div class="stat-label">MARGINE %</div>
+          <div class="stat-label">
+            MARGINE %
+            <span class="info-tooltip" title="Percentuale di profitto: (Bilancio / Entrate) × 100. Indica quanto delle entrate rimane come utile.">ⓘ</span>
+          </div>
         </div>
       </div>
 
@@ -78,7 +92,10 @@
         <div class="stat-icon">💵</div>
         <div class="stat-content">
           <div class="stat-value">{{ formatCurrency(stats.margineLordo) }}</div>
-          <div class="stat-label">MARGINE LORDO</div>
+          <div class="stat-label">
+            MARGINE LORDO
+            <span class="info-tooltip" title="Entrate meno costi dei tutor. Indica il guadagno prima delle altre spese (affitto, utenze, ecc.)">ⓘ</span>
+          </div>
         </div>
       </div>
       
@@ -86,7 +103,36 @@
         <div class="stat-icon">📈</div>
         <div class="stat-content">
           <div class="stat-value">{{ formatCurrency(stats.cashflowMedio) }}/g</div>
-          <div class="stat-label">CASHFLOW MEDIO</div>
+          <div class="stat-label">
+            CASHFLOW MEDIO
+            <span class="info-tooltip" title="Bilancio diviso per i giorni del periodo. Indica quanto si guadagna in media al giorno.">ⓘ</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Break-even Point -->
+      <div class="stat-card break-even" :class="{ 'reached': stats.breakEven?.raggiunto }">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-content">
+          <div class="stat-value" v-if="stats.breakEven?.raggiunto">
+            ✅ Raggiunto
+          </div>
+          <div class="stat-value" v-else-if="stats.costiFissiProporzionati > 0">
+            -€ {{ formatCurrency(stats.breakEven?.mancante || 0) }}
+          </div>
+          <div class="stat-value" v-else>
+            N/D
+          </div>
+          <div class="stat-label">
+            BREAK-EVEN
+            <span class="info-tooltip" :title="'Costi fissi per ' + stats.giorniPeriodo + ' giorni: €' + formatCurrency(stats.costiFissiProporzionati) + '. Configura in Impostazioni → Spese Fisse.'">ⓘ</span>
+          </div>
+          <div class="break-even-bar" v-if="stats.costiFissiProporzionati > 0">
+            <div class="bar-fill" :style="{ width: Math.min(stats.breakEven?.percentuale || 0, 100) + '%' }"></div>
+          </div>
+          <div class="break-even-percent" v-if="stats.costiFissiProporzionati > 0">
+            {{ stats.breakEven?.percentuale || 0 }}%
+          </div>
         </div>
       </div>
       
@@ -139,16 +185,32 @@
     <!-- Filtri Tabella -->
     <div class="table-filters">
       <div class="filter-group">
-        <select v-model="filtroTipo" @change="loadMovimenti" class="form-select">
+        <select v-model="filtroTipo" @change="() => loadMovimenti()" class="form-select">
           <option value="tutti">Tutti i tipi</option>
           <option value="ENTRATA">Entrate</option>
           <option value="USCITA">Uscite</option>
         </select>
       </div>
       <div class="filter-group">
-        <select v-model="filtroCategoria" @change="loadMovimenti" class="form-select">
+        <select v-model="filtroCategoria" @change="() => loadMovimenti()" class="form-select">
           <option value="tutte">Tutte le categorie</option>
           <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <select v-model="filtroMetodo" @change="() => loadMovimenti()" class="form-select">
+          <option value="tutti">Tutti i metodi</option>
+          <option value="CONTANTI">Contanti</option>
+          <option value="BONIFICO">Bonifico</option>
+          <option value="POS">POS</option>
+          <option value="ALTRO">Altro</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <select v-model="filtroOrigine" @change="() => loadMovimenti()" class="form-select">
+          <option value="tutti">Tutte le origini</option>
+          <option value="automatico">Automatico</option>
+          <option value="manuale">Manuale</option>
         </select>
       </div>
       <div class="filter-group search">
@@ -170,6 +232,7 @@
             <th>Data</th>
             <th>Tipo</th>
             <th>Importo</th>
+            <th>Metodo</th>
             <th>Categoria</th>
             <th>Descrizione</th>
             <th>Origine</th>
@@ -187,8 +250,13 @@
             <td :class="mov.tipo === 'ENTRATA' ? 'text-success' : 'text-danger'">
               {{ mov.tipo === 'ENTRATA' ? '+' : '-' }}{{ formatCurrency(mov.importo) }}
             </td>
+            <td>
+              <span class="badge badge-method">
+                {{ formatMetodo(mov.metodoPagamentoEffettivo) }}
+              </span>
+            </td>
             <td>{{ mov.categoria || '-' }}</td>
-            <td class="desc-cell">{{ mov.descrizione }}</td>
+            <td class="desc-cell" :title="mov.descrizione">{{ mov.descrizione }}</td>
             <td>
               <span :class="['badge', isAutomatic(mov) ? 'badge-auto' : 'badge-manual']">
                 {{ isAutomatic(mov) ? '🔄 Auto' : '✏️ Manuale' }}
@@ -196,7 +264,12 @@
             </td>
             <td>
               <div class="actions">
-                <button class="btn-icon" @click="editMovimento(mov)" title="Modifica">✏️</button>
+                <button 
+                  class="btn-icon" 
+                  :class="{ 'needs-invoice': needsInvoice(mov) }"
+                  @click="editMovimento(mov)" 
+                  :title="needsInvoice(mov) ? 'Modifica - Fattura richiesta!' : 'Modifica'"
+                >✏️</button>
                 <button class="btn-icon danger" @click="deleteMovimento(mov)" title="Elimina">🗑️</button>
               </div>
             </td>
@@ -259,7 +332,19 @@
             <div class="form-row">
               <div class="form-group">
                 <label>Importo <span class="required">*</span></label>
-                <input type="number" v-model="form.importo" step="0.01" min="0.01" class="form-input" required />
+                <input 
+                  type="number" 
+                  v-model="form.importo" 
+                  step="0.01" 
+                  min="0.01" 
+                  class="form-input" 
+                  :class="{ 'disabled-field': isEditingAutomatic }"
+                  :disabled="isEditingAutomatic"
+                  required 
+                />
+                <small v-if="isEditingAutomatic" class="field-warning">
+                  ⚠️ L'importo dei pagamenti automatici non è modificabile
+                </small>
               </div>
               <div class="form-group">
                 <label>Data <span class="required">*</span></label>
@@ -281,6 +366,26 @@
                 <option value="Software">Software</option>
                 <option value="Altro">Altro</option>
               </select>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label>Metodo Pagamento <span class="required">*</span></label>
+                <select v-model="form.metodoPagamento" class="form-select" required>
+                  <option value="">Seleziona...</option>
+                  <option value="CONTANTI">Contanti</option>
+                  <option value="BONIFICO">Bonifico</option>
+                  <option value="POS">POS</option>
+                  <option value="ALTRO">Altro</option>
+                </select>
+              </div>
+              <div class="form-group checkbox-group">
+                <label class="checkbox-label" :class="{ 'invoice-pending': needsInvoiceInModal }">
+                  <input type="checkbox" v-model="form.fatturaEmessa" />
+                  <span>Fattura emessa</span>
+                  <span v-if="needsInvoiceInModal" class="invoice-alert">⚠️ Richiesta!</span>
+                </label>
+              </div>
             </div>
             
             <div class="form-group">
@@ -324,6 +429,8 @@ const dataInizio = ref('');
 const dataFine = ref('');
 const filtroTipo = ref('tutti');
 const filtroCategoria = ref('tutte');
+const filtroMetodo = ref('tutti');
+const filtroOrigine = ref('tutti');
 const searchQuery = ref('');
 let searchTimeout = null;
 
@@ -335,6 +442,8 @@ const form = ref({
   importo: '',
   data: new Date().toISOString().split('T')[0],
   categoria: '',
+  metodoPagamento: '',
+  fatturaEmessa: false,
   descrizione: '',
   note: ''
 });
@@ -350,6 +459,37 @@ function formatDate(date) {
 
 function isAutomatic(mov) {
   return mov.paymentId || mov.tutorPaymentId;
+}
+
+// Verifica se un movimento richiede fattura ma non è ancora stata emessa
+function needsInvoice(mov) {
+  // Se è un movimento collegato a un Payment, controlla richiedeFattura
+  if (mov.payment && mov.payment.richiedeFattura && !mov.fatturaEmessa) {
+    return true;
+  }
+  return false;
+}
+
+// Computed per sapere se stiamo modificando un movimento automatico
+const isEditingAutomatic = computed(() => {
+  return editingMovimento.value && isAutomatic(editingMovimento.value);
+});
+
+// Computed per sapere se il movimento in modifica richiede fattura
+const needsInvoiceInModal = computed(() => {
+  if (!editingMovimento.value) return false;
+  return needsInvoice(editingMovimento.value) && !form.value.fatturaEmessa;
+});
+
+function formatMetodo(metodo) {
+  const labels = {
+    'CONTANTI': '💵 Contanti',
+    'BONIFICO': '🏦 Bonifico',
+    'POS': '💳 POS',
+    'ASSEGNO': '📝 Assegno',
+    'ALTRO': '📦 Altro'
+  };
+  return labels[metodo] || metodo || '-';
 }
 
 // Periodo
@@ -418,6 +558,8 @@ async function loadMovimenti(page = 1) {
     if (dataFine.value) params.dataFine = dataFine.value;
     if (filtroTipo.value !== 'tutti') params.tipo = filtroTipo.value;
     if (filtroCategoria.value !== 'tutte') params.categoria = filtroCategoria.value;
+    if (filtroMetodo.value !== 'tutti') params.metodo = filtroMetodo.value;
+    if (filtroOrigine.value !== 'tutti') params.origine = filtroOrigine.value;
     if (searchQuery.value) params.search = searchQuery.value;
     
     const response = await accountingAPI.getAll(params);
@@ -451,6 +593,8 @@ function editMovimento(mov) {
     importo: parseFloat(mov.importo),
     data: new Date(mov.data).toISOString().split('T')[0],
     categoria: mov.categoria || '',
+    metodoPagamento: mov.metodoPagamentoEffettivo || mov.metodoPagamento || '',
+    fatturaEmessa: mov.fatturaEmessa || false,
     descrizione: mov.descrizione,
     note: mov.note || ''
   };
@@ -475,7 +619,8 @@ async function saveMovimento() {
     await loadData();
   } catch (error) {
     console.error('Errore salvataggio:', error);
-    alert('Errore durante il salvataggio');
+    const errorMessage = error.response?.data?.error || 'Errore durante il salvataggio';
+    alert(errorMessage);
   } finally {
     saving.value = false;
   }
@@ -506,6 +651,8 @@ function closeModal() {
     importo: '',
     data: new Date().toISOString().split('T')[0],
     categoria: '',
+    metodoPagamento: '',
+    fatturaEmessa: false,
     descrizione: '',
     note: ''
   };
@@ -645,6 +792,33 @@ onMounted(() => {
   letter-spacing: 0.5px;
 }
 
+.stat-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.stat-breakdown span {
+  white-space: nowrap;
+}
+
+/* Tooltip info icon */
+.info-tooltip {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+  cursor: help;
+  position: relative;
+}
+
+.info-tooltip:hover {
+  color: #64748b;
+}
+
 .stat-card.entrate {
   border-left: 4px solid #10b981;
 }
@@ -663,6 +837,47 @@ onMounted(() => {
 
 .stat-card.margine {
   border-left: 4px solid #8b5cf6;
+}
+
+/* Break-even Point Card */
+.stat-card.break-even {
+  border-left: 4px solid #f59e0b;
+}
+
+.stat-card.break-even.reached {
+  border-left: 4px solid #10b981;
+}
+
+.stat-card.break-even.reached .stat-value {
+  color: #10b981;
+  font-size: 18px;
+}
+
+.break-even-bar {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.break-even-bar .bar-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.stat-card.break-even.reached .bar-fill {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.break-even-percent {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
+  text-align: right;
 }
 
 /* Charts Row */
@@ -780,6 +995,7 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: help;
 }
 
 /* Badges */
@@ -810,6 +1026,11 @@ onMounted(() => {
 .badge-manual {
   background: rgba(59, 130, 246, 0.1);
   color: #3b82f6;
+}
+
+.badge-method {
+  background: rgba(100, 116, 139, 0.1);
+  color: #64748b;
 }
 
 .text-success {
@@ -845,6 +1066,37 @@ onMounted(() => {
 .btn-icon.danger:hover {
   background: #fee2e2;
   border-color: #fecaca;
+}
+
+/* Invoice warning styles */
+.btn-icon.needs-invoice {
+  border: 2px solid #f59e0b;
+  background: #fffbeb;
+  animation: pulse-orange 2s infinite;
+}
+
+.btn-icon.needs-invoice:hover {
+  background: #fef3c7;
+  border-color: #d97706;
+}
+
+@keyframes pulse-orange {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2); }
+}
+
+.invoice-pending {
+  background: #fef3c7 !important;
+  border: 1px solid #f59e0b !important;
+  border-radius: 6px;
+  padding: 8px 12px !important;
+}
+
+.invoice-alert {
+  margin-left: 8px;
+  color: #d97706;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 /* Empty State */
@@ -945,6 +1197,28 @@ onMounted(() => {
 
 .form-group {
   margin-bottom: 16px;
+}
+
+.form-group.checkbox-group {
+  display: flex;
+  align-items: center;
+  padding-top: 28px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
 }
 
 .form-group label {
@@ -1050,5 +1324,20 @@ onMounted(() => {
   .data-table th, .data-table td {
     padding: 10px 8px;
   }
+}
+
+/* Disabled field styles */
+.disabled-field {
+  background-color: #f1f5f9 !important;
+  color: #94a3b8 !important;
+  cursor: not-allowed;
+  border-color: #e2e8f0 !important;
+}
+
+.field-warning {
+  display: block;
+  margin-top: 4px;
+  color: #d97706;
+  font-size: 12px;
 }
 </style>

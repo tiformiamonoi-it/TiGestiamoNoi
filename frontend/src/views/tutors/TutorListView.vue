@@ -66,6 +66,8 @@
       v-model="selectedIds"
       @view="goToDetail"
       @pay="openSinglePayment"
+      @toggle-active="handleToggleActive"
+      @delete="handleDeleteTutor"
     />
 
     <!-- Pagination -->
@@ -223,6 +225,39 @@ async function handleTutorSave(tutorData) {
   } catch (e) {
     console.error('Errore salvataggio tutor:', e);
     alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+  }
+}
+
+// Toggle Active/Inactive
+async function handleToggleActive(tutor) {
+  const newState = !tutor.active;
+  const action = newState ? 'attivare' : 'disattivare';
+  
+  if (!confirm(`Sei sicuro di voler ${action} ${tutor.firstName} ${tutor.lastName}?`)) return;
+  
+  try {
+    await api.put(`/tutors/${tutor.id}`, { active: newState });
+    tutorStore.fetchTutors();
+    tutorStore.fetchStats();
+  } catch (e) {
+    console.error('Errore toggle stato:', e);
+    alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+  }
+}
+
+// Delete Tutor
+async function handleDeleteTutor(tutor) {
+  if (!confirm(`Sei sicuro di voler eliminare ${tutor.firstName} ${tutor.lastName}?\n\nQuesta azione è irreversibile.`)) return;
+  
+  try {
+    await api.delete(`/tutors/${tutor.id}`);
+    tutorStore.fetchTutors();
+    tutorStore.fetchStats();
+    alert('✅ Tutor eliminato con successo!');
+  } catch (e) {
+    console.error('Errore eliminazione:', e);
+    const errorMsg = e.response?.data?.error || 'Errore durante l\'eliminazione';
+    alert(`❌ ${errorMsg}`);
   }
 }
 </script>

@@ -652,48 +652,57 @@ async function calcolaStatsTutor(tutorId, periodo) {
     },
   });
 
-  // 2. Calcola mesi non pagati nel periodo
+  // 2. Calcola TUTTI i mesi non pagati (da prima lezione tutor a oggi)
+  // Trova la prima lezione del tutor
+  const firstLesson = await prisma.lesson.findFirst({
+    where: { tutorId },
+    orderBy: { data: 'asc' },
+    select: { data: true }
+  });
+
   const mesiNonPagati = [];
   let totaleDovuto = 0;
 
-  // Genera lista mesi nel range
-  const current = new Date(start);
-  while (current <= end) {
-    const meseStart = new Date(current.getFullYear(), current.getMonth(), 1);
-    const meseEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0, 23, 59, 59);
+  if (firstLesson) {
+    // Genera lista mesi dalla prima lezione fino a fine mese SCORSO (non includiamo mese corrente se incompleto)
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Calcola compenso mese
-    const compenso = await calcolaCompensoMese(prisma, tutorId, meseStart);
+    // Start from first lesson month
+    const current = new Date(firstLesson.data.getFullYear(), firstLesson.data.getMonth(), 1);
 
-    // Check se pagato (UTC comparison)
-    // meseStart is local 00:00. Convert to UTC 00:00 for DB query if DB stores UTC.
-    // Actually Prisma stores DateTime as UTC.
-    // If we constructed meseStart as local, we need to be careful.
-    // Best practice: Use UTC for everything.
-    const meseStartUTC = new Date(Date.UTC(meseStart.getFullYear(), meseStart.getMonth(), 1));
+    // Itera tutti i mesi fino al mese scorso (incluso)
+    while (current < currentMonthStart) {
+      const meseStart = new Date(current.getFullYear(), current.getMonth(), 1);
 
-    // Fetch all payments for this month (UTC)
-    const payments = await prisma.tutorPayment.findMany({
-      where: {
-        tutorId,
-        mese: meseStartUTC,
-      },
-    });
+      // Calcola compenso mese
+      const compenso = await calcolaCompensoMese(prisma, tutorId, meseStart);
 
-    const totalePagato = payments.reduce((sum, p) => sum + Number(p.importo), 0);
-    const rimanente = compenso.totaleArrotondato - totalePagato;
+      // Check se pagato (UTC comparison)
+      const meseStartUTC = new Date(Date.UTC(meseStart.getFullYear(), meseStart.getMonth(), 1));
 
-    // If there is a remaining amount, add to unpaid list
-    // Note: We use a small epsilon for float comparison safety, though we used Math.floor/Number
-    if (rimanente > 0.01) {
-      mesiNonPagati.push({
-        date: meseStartUTC, // Return UTC date
-        importo: rimanente
+      // Fetch all payments for this month (UTC)
+      const payments = await prisma.tutorPayment.findMany({
+        where: {
+          tutorId,
+          mese: meseStartUTC,
+        },
       });
-      totaleDovuto += rimanente;
-    }
 
-    current.setMonth(current.getMonth() + 1);
+      const totalePagato = payments.reduce((sum, p) => sum + Number(p.importo), 0);
+      const rimanente = compenso.totaleArrotondato - totalePagato;
+
+      // If there is a remaining amount AND there were lessons this month, add to unpaid list
+      if (rimanente > 0.01 && compenso.totaleArrotondato > 0) {
+        mesiNonPagati.push({
+          date: meseStartUTC,
+          importo: rimanente
+        });
+        totaleDovuto += rimanente;
+      }
+
+      current.setMonth(current.getMonth() + 1);
+    }
   }
 
   return {
@@ -749,12 +758,66 @@ function getDateRange(periodo) {
   }
 }
 
+// ============================================
+// DELETE TUTOR
+// ============================================
+
+/**
+ * DELETE /api/tutors/:id
+ * Elimina un tutor (solo se non ha pagamenti associati)
+ */
+const deleteTutor = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Verifica se il tutor esiste
+    const tutor = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        tutorPayments: true,
+        tutorProfile: true
+      }
+    });
+
+    if (!tutor) {
+      return res.status(404).json({ error: 'Tutor non trovato' });
+    }
+
+    // Non permettere eliminazione se ci sono pagamenti associati
+    if (tutor.tutorPayments && tutor.tutorPayments.length > 0) {
+      return res.status(400).json({
+        error: `Impossibile eliminare: questo tutor ha ${tutor.tutorPayments.length} pagamento/i associati. Puoi solo disattivarlo.`
+      });
+    }
+
+    // Elimina in transazione: prima profilo, poi utente
+    await prisma.$transaction(async (tx) => {
+      // Elimina TutorProfile se esiste
+      if (tutor.tutorProfile) {
+        await tx.tutorProfile.delete({
+          where: { userId: id }
+        });
+      }
+
+      // Elimina User
+      await tx.user.delete({
+        where: { id }
+      });
+    });
+
+    res.json({ message: 'Tutor eliminato con successo' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTutors,
   createTutor,
   getTutorStats,
   getTutorDetail,
   updateTutor,
+  deleteTutor,
   payTutors,
   updatePayment,
   deletePayment,

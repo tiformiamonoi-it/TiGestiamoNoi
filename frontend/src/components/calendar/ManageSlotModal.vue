@@ -29,15 +29,15 @@
           <div v-if="existingLesson" class="lesson-info">
             <div class="info-badge">
               <span class="label">Tipo:</span>
-              <span class="value" :class="`type-${existingLesson.tipo.toLowerCase()}`">
-                {{ existingLesson.tipo }}
+              <span class="value" :class="`type-${calculatedType.toLowerCase()}`">
+                {{ calculatedType || existingLesson.tipo }}
               </span>
             </div>
             <div class="info-badge">
               <span class="label">Compenso tutor:</span>
-              <span class="value">€{{ formatCurrency(existingLesson.compensoTutor) }}</span>
+              <span class="value">€{{ formatCurrency(calculatedCompenso || existingLesson.compensoTutor) }}</span>
             </div>
-            <div v-if="existingLesson.forzaGruppo" class="info-badge warning">
+            <div v-if="forzaGruppo" class="info-badge warning">
               <span class="label">⚠️ Gruppo forzato</span>
             </div>
           </div>
@@ -246,8 +246,10 @@ const slotLabel = computed(() => {
 const calculatedType = computed(() => {
   const num = students.value.length;
   if (num === 0) return '';
+  // ✅ FIX: Check forzaGruppo first, so single student can be upgraded to GRUPPO
+  if (forzaGruppo.value) return 'GRUPPO';
   if (num === 1) return 'SINGOLA';
-  if (forzaGruppo.value || num <= 3) return 'GRUPPO';
+  if (num <= 3) return 'GRUPPO';
   return 'MAXI';
 });
 
@@ -276,30 +278,44 @@ const calculatedCompenso = computed(() => {
 const loadExistingLesson = async () => {
   loading.value = true;
   try {
-    // Cerca lezione esistente per data + tutor + slot
+    // Cerca lezioni esistenti per data + tutor + slot
     const response = await lessonsAPI.getAll({
       tutorId: props.tutorId,
       dataInizio: props.date,
       dataFine: props.date,
     });
 
-    // Trova lezione nello slot specifico
-    const lesson = response.data.lessons.find(
+    // ✅ FIX: Trova TUTTE le lezioni nello slot specifico (non solo la prima!)
+    const lessons = response.data.lessons.filter(
       l => l.timeSlot?.oraInizio === props.slotStart
     );
 
-    if (lesson) {
-      existingLesson.value = lesson;
-      forzaGruppo.value = lesson.forzaGruppo || false;
-      note.value = lesson.note || '';
+    if (lessons.length > 0) {
+      // Usa la prima lezione come riferimento per metadata
+      existingLesson.value = lessons[0];
+      forzaGruppo.value = lessons[0].forzaGruppo || false;
+      note.value = lessons[0].note || '';
 
-      // Popola studenti e determina lo stato globale della mezza lezione
-      students.value = lesson.lessonStudents.map(ls => ({
-        id: ls.student.id,
-        firstName: ls.student.firstName,
-        lastName: ls.student.lastName,
-        mezzaLezione: ls.mezzaLezione || false,
-      }));
+      // ✅ Unisci tutti gli studenti da tutte le lezioni nello slot
+      const studentsMap = new Map();
+      lessons.forEach(lesson => {
+        lesson.lessonStudents?.forEach(ls => {
+          if (!studentsMap.has(ls.student.id)) {
+            studentsMap.set(ls.student.id, {
+              id: ls.student.id,
+              firstName: ls.student.firstName,
+              lastName: ls.student.lastName,
+              mezzaLezione: ls.mezzaLezione || false,
+              lessonId: lesson.id, // Traccia a quale lezione appartiene
+            });
+          }
+        });
+      });
+
+      students.value = Array.from(studentsMap.values());
+      
+      // ✅ Salva riferimento a tutte le lezioni per eventuale aggiornamento/eliminazione
+      existingLesson.value.allLessonsInSlot = lessons;
       
       // ✅ Imposta checkbox globale dal primo studente (tutti devono avere lo stesso valore)
       if (students.value.length > 0) {

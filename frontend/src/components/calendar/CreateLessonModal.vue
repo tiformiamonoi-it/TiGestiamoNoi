@@ -221,9 +221,16 @@ const totalCompenso = computed(() => {
     const numStudenti = slot.studenti.length;
     if (numStudenti === 0) return 0;
     
+    // ✅ FIX: Check forzaGruppo first, so single student can be upgraded to GRUPPO
     let tipo = 'SINGOLA';
-    if (numStudenti > 1) {
-      tipo = slot.forzaGruppo || numStudenti <= 3 ? 'GRUPPO' : 'MAXI';
+    if (slot.forzaGruppo) {
+      tipo = 'GRUPPO';
+    } else if (numStudenti === 1) {
+      tipo = 'SINGOLA';
+    } else if (numStudenti <= 3) {
+      tipo = 'GRUPPO';
+    } else {
+      tipo = 'MAXI';
     }
     
     const tariffe = {

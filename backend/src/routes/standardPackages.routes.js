@@ -20,7 +20,7 @@ const validation = [
 router.get('/', controller.getStandardPackages);
 router.get('/:id', controller.getStandardPackageById);
 router.post('/', requireRole(['ADMIN']), validation, controller.createStandardPackage);
-router.put('/:id', requireRole(['ADMIN']), validation, controller.updateStandardPackage);
+router.put('/:id', requireRole(['ADMIN']), controller.updateStandardPackage);
 router.delete('/:id', requireRole(['ADMIN']), controller.deleteStandardPackage);
 
 module.exports = router;

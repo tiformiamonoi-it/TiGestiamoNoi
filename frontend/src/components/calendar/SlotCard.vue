@@ -120,8 +120,10 @@ const showSearch = ref(false);
 const tipo = computed(() => {
   const num = props.studenti.length;
   if (num === 0) return '';
+  // ✅ FIX: Check forzaGruppo first, so single student can be upgraded to GRUPPO
+  if (props.forzaGruppo) return 'GRUPPO';
   if (num === 1) return 'SINGOLA';
-  if (props.forzaGruppo || num <= 3) return 'GRUPPO';
+  if (num <= 3) return 'GRUPPO';
   return 'MAXI';
 });
 

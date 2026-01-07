@@ -33,4 +33,7 @@ router.put('/payments/:id', tutorsController.updatePayment);
 // DELETE /api/tutors/payments/:id - Elimina pagamento (Reset)
 router.delete('/payments/:id', tutorsController.deletePayment);
 
+// DELETE /api/tutors/:id - Elimina tutor
+router.delete('/:id', tutorsController.deleteTutor);
+
 module.exports = router;

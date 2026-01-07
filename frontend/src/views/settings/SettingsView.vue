@@ -27,6 +27,7 @@
       <TabMaterie v-else-if="activeTab === 'materie'" />
       <TabSlotOrari v-else-if="activeTab === 'slot'" />
       <TabChiusure v-else-if="activeTab === 'chiusure'" />
+      <TabSpeseFisse v-else-if="activeTab === 'spese'" />
       <TabUtenti v-else-if="activeTab === 'utenti'" />
     </div>
   </div>
@@ -40,6 +41,7 @@ import TabTariffe from './components/TabTariffe.vue';
 import TabMaterie from './components/TabMaterie.vue';
 import TabSlotOrari from './components/TabSlotOrari.vue';
 import TabChiusure from './components/TabChiusure.vue';
+import TabSpeseFisse from './components/TabSpeseFisse.vue';
 import TabUtenti from './components/TabUtenti.vue';
 
 const route = useRoute();
@@ -51,6 +53,7 @@ const tabs = [
   { key: 'materie', label: 'Materie', icon: '📚' },
   { key: 'slot', label: 'Slot Orari', icon: '🕐' },
   { key: 'chiusure', label: 'Chiusure', icon: '🚫' },
+  { key: 'spese', label: 'Spese Fisse', icon: '💸' },
   { key: 'utenti', label: 'Utenti', icon: '👥' }
 ];
 

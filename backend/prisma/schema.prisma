@@ -447,6 +447,9 @@ model AccountingEntry {
   tutorPaymentId String? @unique
   tutorPayment   TutorPayment? @relation(fields: [tutorPaymentId], references: [id], onDelete: SetNull)
 
+  metodoPagamento PaymentMethod?
+  fatturaEmessa   Boolean @default(false)
+
   // Metadati
   note String?
   
