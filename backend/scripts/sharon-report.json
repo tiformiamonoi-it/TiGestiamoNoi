@@ -1,0 +1,132 @@
+{
+  "lezioni": [
+    {
+      "data": "2025-12-02",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-02",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-02",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-03",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-03",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-03",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-04",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-04",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-04",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-09",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-09",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-09",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-11",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-11",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-11",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-15",
+      "tipo": "MAXI",
+      "compenso": 8.5,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-15",
+      "tipo": "MAXI",
+      "compenso": 8.5,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-15",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-18",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-18",
+      "tipo": "GRUPPO",
+      "compenso": 8,
+      "mezzaLezione": false
+    },
+    {
+      "data": "2025-12-18",
+      "tipo": "GRUPPO",
+      "compenso": 4,
+      "mezzaLezione": true
+    }
+  ],
+  "totale": 165,
+  "count": 21
+}

@@ -148,7 +148,8 @@ const getLessonById = async (req, res, next) => {
 
 /**
  * POST /api/lessons
- * Crea nuova lezione con scalamento automatico
+ * Crea nuova lezione o aggiunge studenti a lezione esistente
+ * ✅ FIX: Se esiste già una lezione per tutor+data+slot, aggiunge gli studenti
  * ✅ FIX: Per pacchetti MENSILI, scala -1 giorno solo se prima lezione della data
  */
 const createLesson = async (req, res, next) => {
@@ -181,7 +182,168 @@ const createLesson = async (req, res, next) => {
       });
     }
 
-    // ✅ STEP 1: Calcola tipo lezione e compenso
+    // ✅ STEP 0: Cerca lezione esistente per tutor+data+slot
+    const dataInizioGiorno = new Date(data);
+    dataInizioGiorno.setHours(0, 0, 0, 0);
+    const dataFineGiorno = new Date(data);
+    dataFineGiorno.setHours(23, 59, 59, 999);
+
+    const lessioneEsistente = await prisma.lesson.findFirst({
+      where: {
+        tutorId,
+        timeSlotId,
+        data: {
+          gte: dataInizioGiorno,
+          lte: dataFineGiorno,
+        },
+      },
+      include: {
+        lessonStudents: true,
+      },
+    });
+
+    // ✅ Se esiste una lezione, aggiungi studenti a quella
+    if (lessioneEsistente) {
+      console.log(`📌 Trovata lezione esistente ${lessioneEsistente.id} per tutor+data+slot`);
+
+      // Filtra studenti già presenti nella lezione
+      const studentiEsistentiIds = lessioneEsistente.lessonStudents.map(ls => ls.studentId);
+      const studentiNuovi = studenti.filter(s => !studentiEsistentiIds.includes(s.studentId));
+
+      if (studentiNuovi.length === 0) {
+        return res.status(400).json({
+          error: 'Tutti gli studenti sono già presenti in questa lezione',
+          existingLessonId: lessioneEsistente.id,
+        });
+      }
+
+      console.log(`📌 Aggiungendo ${studentiNuovi.length} nuovi studenti alla lezione esistente`);
+
+      // Aggiungi studenti alla lezione esistente
+      const result = await prisma.$transaction(async (tx) => {
+        const studentiAggiornati = [];
+        const { isPacchettoClosed } = require('../utils/packageStates');
+
+        for (const studentData of studentiNuovi) {
+          const { studentId, mezzaLezione = false } = studentData;
+
+          // Trova pacchetto valido
+          const candidatePackages = await tx.package.findMany({
+            where: { studentId },
+            orderBy: { createdAt: 'asc' },
+          });
+
+          let pacchetto = null;
+          for (const pkg of candidatePackages) {
+            if (!isPacchettoClosed(pkg)) {
+              pacchetto = pkg;
+              break;
+            }
+          }
+
+          if (!pacchetto) {
+            throw new Error(`Nessun pacchetto valido per studente ${studentId}`);
+          }
+
+          // Verifica prima lezione del giorno
+          const dataInizio = new Date(data);
+          dataInizio.setHours(0, 0, 0, 0);
+          const dataFine = new Date(data);
+          dataFine.setHours(23, 59, 59, 999);
+
+          const lezioniEsistentiOggi = await tx.lesson.count({
+            where: {
+              data: { gte: dataInizio, lte: dataFine },
+              lessonStudents: { some: { studentId } },
+            },
+          });
+
+          const isPrimaLezioneOggi = lezioniEsistentiOggi === 0;
+
+          // Scala ore
+          let oreResiduo = parseFloat(pacchetto.oreResiduo) - 1.0;
+          let giorniResiduo = pacchetto.giorniResiduo ? parseInt(pacchetto.giorniResiduo) : null;
+
+          if (pacchetto.tipo === 'MENSILE' && isPrimaLezioneOggi && giorniResiduo !== null) {
+            giorniResiduo = Math.max(0, giorniResiduo - 1);
+          }
+
+          const updatedPackage = await tx.package.update({
+            where: { id: pacchetto.id },
+            data: {
+              oreResiduo: parseFloat(oreResiduo.toFixed(2)),
+              giorniResiduo,
+            },
+          });
+
+          // Crea LessonStudent
+          await tx.lessonStudent.create({
+            data: {
+              lessonId: lessioneEsistente.id,
+              studentId,
+              packageId: pacchetto.id,
+              oreScalate: 1.0,
+              mezzaLezione,
+            },
+          });
+
+          studentiAggiornati.push({
+            studentId,
+            packageId: pacchetto.id,
+            oreResiduo: updatedPackage.oreResiduo,
+            giorniResiduo: updatedPackage.giorniResiduo,
+          });
+        }
+
+        // ✅ Ricalcola tipo e compenso della lezione
+        const totalStudents = studentiEsistentiIds.length + studentiNuovi.length;
+        const nuovoForzaGruppo = forzaGruppo || lessioneEsistente.forzaGruppo;
+        const tipoLezione = determinaTipoLezione(totalStudents, nuovoForzaGruppo);
+        const primaMezza = studenti[0]?.mezzaLezione || lessioneEsistente.lessonStudents[0]?.mezzaLezione || false;
+        const compensoTutor = calcolaCompensoTutor(tipoLezione, primaMezza);
+
+        await tx.lesson.update({
+          where: { id: lessioneEsistente.id },
+          data: {
+            tipo: tipoLezione,
+            compensoTutor,
+            forzaGruppo: nuovoForzaGruppo,
+            note: note || lessioneEsistente.note,
+          },
+        });
+
+        return { lessonId: lessioneEsistente.id, studentiAggiornati };
+      });
+
+      // Aggiorna stati pacchetti
+      for (const student of result.studentiAggiornati) {
+        await updatePackageStates(student.packageId);
+      }
+
+      // Recupera lezione completa
+      const lessonCompleta = await prisma.lesson.findUnique({
+        where: { id: result.lessonId },
+        include: {
+          tutor: true,
+          timeSlot: true,
+          lessonStudents: {
+            include: {
+              student: true,
+              package: true,
+            },
+          },
+        },
+      });
+
+      return res.status(200).json({
+        message: `Studenti aggiunti alla lezione esistente`,
+        lesson: lessonCompleta,
+        studentiAggiornati: result.studentiAggiornati,
+        wasExisting: true,
+      });
+    }
+
+    // ✅ STEP 1: Calcola tipo lezione e compenso (nuova lezione)
     const numeroStudenti = studenti.length;
     const tipoLezione = determinaTipoLezione(numeroStudenti, forzaGruppo);
     const primaMezzaLezione = studenti[0]?.mezzaLezione || false;
@@ -203,24 +365,19 @@ const createLesson = async (req, res, next) => {
       });
 
       const studentiAggiornati = [];
+      const { isPacchettoClosed } = require('../utils/packageStates');
 
-      // ✅ Per ogni studente: controlla se ha già lezioni nello stesso giorno
+      // Per ogni studente: controlla se ha già lezioni nello stesso giorno
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
         // Trova pacchetto valido (non chiuso)
-        // ✅ Prendi tutti i pacchetti dello studente e filtra via quelli chiusi
         const candidatePackages = await tx.package.findMany({
-          where: {
-            studentId: studentId,
-          },
-          orderBy: { createdAt: 'asc' }, // Più vecchio prima
+          where: { studentId },
+          orderBy: { createdAt: 'asc' },
         });
 
-        // Trova il primo pacchetto non chiuso
-        const { isPacchettoClosed } = require('../utils/packageStates');
         let pacchetto = null;
-
         for (const pkg of candidatePackages) {
           if (!isPacchettoClosed(pkg)) {
             pacchetto = pkg;
@@ -232,7 +389,7 @@ const createLesson = async (req, res, next) => {
           throw new Error(`Nessun pacchetto valido trovato per studente ${studentId} (tutti i pacchetti sono chiusi o sospesi)`);
         }
 
-        // ✅ Verifica se studente ha già lezioni in questa data
+        // Verifica se studente ha già lezioni in questa data
         const dataInizio = new Date(data);
         dataInizio.setHours(0, 0, 0, 0);
         const dataFine = new Date(data);
@@ -240,25 +397,18 @@ const createLesson = async (req, res, next) => {
 
         const lezioniEsistentiOggi = await tx.lesson.count({
           where: {
-            data: {
-              gte: dataInizio,
-              lte: dataFine,
-            },
-            lessonStudents: {
-              some: {
-                studentId: studentId,
-              },
-            },
+            data: { gte: dataInizio, lte: dataFine },
+            lessonStudents: { some: { studentId } },
           },
         });
 
         const isPrimaLezioneOggi = lezioniEsistentiOggi === 0;
 
-        // ✅ Scala ore (sempre -1h)
+        // Scala ore (sempre -1h)
         let oreResiduo = parseFloat(pacchetto.oreResiduo) - 1.0;
         let giorniResiduo = pacchetto.giorniResiduo ? parseInt(pacchetto.giorniResiduo) : null;
 
-        // ✅ Se pacchetto MENSILE: scala -1 giorno SOLO se prima lezione del giorno
+        // Se pacchetto MENSILE: scala -1 giorno SOLO se prima lezione del giorno
         if (pacchetto.tipo === 'MENSILE' && isPrimaLezioneOggi && giorniResiduo !== null) {
           giorniResiduo = Math.max(0, giorniResiduo - 1);
           console.log(`✅ Prima lezione del giorno per studente ${studentId}: -1 giorno → giorniResiduo=${giorniResiduo}`);
@@ -269,7 +419,7 @@ const createLesson = async (req, res, next) => {
           where: { id: pacchetto.id },
           data: {
             oreResiduo: parseFloat(oreResiduo.toFixed(2)),
-            giorniResiduo: giorniResiduo,
+            giorniResiduo,
           },
         });
 

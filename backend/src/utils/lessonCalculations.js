@@ -25,11 +25,11 @@ function determinaTipoLezione(numeroStudenti, forzaGruppo = false) {
   if (forzaGruppo && numeroStudenti === 1) {
     return 'GRUPPO';
   }
-  
+
   if (numeroStudenti === 1) return 'SINGOLA';
-  if (numeroStudenti >= 2 && numeroStudenti <= 3) return 'GRUPPO';
-  if (numeroStudenti >= 4) return 'MAXI';
-  
+  if (numeroStudenti >= 2 && numeroStudenti <= 4) return 'GRUPPO';
+  if (numeroStudenti >= 5) return 'MAXI';
+
   return 'SINGOLA';
 }
 
@@ -78,13 +78,13 @@ function deveScalareGiorno(oreResiduoGiorno, orarioGiornaliero) {
 function calcolaMargineGiornaliero(lezioni) {
   let incasso = 0;
   let spese = 0;
-  
+
   lezioni.forEach(lezione => {
     spese += parseFloat(lezione.compensoTutor || 0);
   });
-  
+
   const margine = incasso - spese;
-  
+
   return {
     incasso: parseFloat(incasso.toFixed(2)),
     spese: parseFloat(spese.toFixed(2)),
@@ -102,9 +102,9 @@ function calcolaMargineGiornaliero(lezioni) {
 function calcolaNuoviValoriPacchetto(pacchetto, mezzaLezione = false) {
   let oreResiduo = parseFloat(pacchetto.oreResiduo) - 1.0;
   let giorniResiduo = pacchetto.giorniResiduo ? parseInt(pacchetto.giorniResiduo) : null;
-  
+
   // NON scalare giorni qui, lo fa il controller
-  
+
   return {
     oreResiduo: parseFloat(oreResiduo.toFixed(2)),
     giorniResiduo: giorniResiduo,
@@ -118,12 +118,12 @@ function calcolaNuoviValoriPacchetto(pacchetto, mezzaLezione = false) {
 function ripristinaValoriPacchetto(pacchetto, mezzaLezione = false) {
   let oreResiduo = parseFloat(pacchetto.oreResiduo) + 1.0;
   let giorniResiduo = pacchetto.giorniResiduo ? parseInt(pacchetto.giorniResiduo) : null;
-  
+
   // ✅ Ripristina +1 giorno solo per MENSILE
   if (pacchetto.tipo === 'MENSILE' && giorniResiduo !== null) {
     giorniResiduo += 1;
   }
-  
+
   return {
     oreResiduo: parseFloat(oreResiduo.toFixed(2)),
     giorniResiduo: giorniResiduo,
