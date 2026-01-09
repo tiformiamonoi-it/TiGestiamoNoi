@@ -156,6 +156,11 @@ const getStudents = async (req, res, next) => {
         giorniUsati = giorniTotali + Math.abs(giorniResiduoDB);
       }
 
+      // ✅ FIX: Calculate REAL giorniResiduo based on actual lessons for MENSILE
+      const giorniResiduoCalcolato = pacchettoAttivo.tipo === 'MENSILE'
+        ? Math.max(0, giorniTotali - giorniUsati)
+        : giorniResiduoDB;
+
       return {
         id: student.id,
         firstName: student.firstName,
@@ -179,7 +184,7 @@ const getStudents = async (req, res, next) => {
           oreTotali: parseFloat(pacchettoAttivo.oreAcquistate || 0),
           giorniAcquistati: pacchettoAttivo.giorniAcquistati || 0,
           giorniUsati: giorniUsati,
-          giorniResiduo: giorniResiduoDB,
+          giorniResiduo: giorniResiduoCalcolato, // ✅ FIX: Use calculated value
           giorniTotali: giorniTotali,
           importoTotale: parseFloat(pacchettoAttivo.prezzoTotale || 0),
           importoPagato: parseFloat(pacchettoAttivo.importoPagato || 0),
