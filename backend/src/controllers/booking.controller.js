@@ -135,10 +135,13 @@ const createPublicBooking = async (req, res, next) => {
             }
         });
 
-        // Invia email notifica admin (async, non blocca la risposta)
-        sendBookingNotification(booking).catch(err =>
-            console.error('Errore invio email:', err)
-        );
+        // Invia email notifica admin (await per serverless)
+        try {
+            await sendBookingNotification(booking);
+        } catch (emailErr) {
+            console.error('Errore invio email:', emailErr);
+            // Non blocca la prenotazione se l'email fallisce
+        }
 
         res.status(201).json({
             message: 'Prenotazione inviata con successo!',
@@ -258,10 +261,14 @@ const addCommunication = async (req, res, next) => {
                 }
             });
 
-            // Invia email notifica (async)
-            sendCommunicationNotification({
-                studentName, studentSurname, studentPhone, requestedDate, notes
-            }).catch(err => console.error('Errore invio email:', err));
+            // Invia email notifica (await per serverless)
+            try {
+                await sendCommunicationNotification({
+                    studentName, studentSurname, studentPhone, requestedDate, notes
+                });
+            } catch (emailErr) {
+                console.error('Errore invio email:', emailErr);
+            }
 
             res.json({
                 message: 'Comunicazione aggiunta alla prenotazione esistente',
