@@ -33,6 +33,15 @@ router.put('/payments/:id', tutorsController.updatePayment);
 // DELETE /api/tutors/payments/:id - Elimina pagamento (Reset)
 router.delete('/payments/:id', tutorsController.deletePayment);
 
+// GET /api/tutors/:id/monthly-performance - Performance mensile
+router.get('/:id/monthly-performance', tutorsController.getMonthlyPerformance);
+
+// PUT /api/tutors/:id/compenso-mensile - Modifica compenso mese
+router.put('/:id/compenso-mensile', tutorsController.updateCompensoMensile);
+
+// GET /api/tutors/:id/detailed-stats - Statistiche dettagliate (distribuzione ore, top alunni, preferenze)
+router.get('/:id/detailed-stats', tutorsController.getDetailedStats);
+
 // DELETE /api/tutors/:id - Elimina tutor
 router.delete('/:id', tutorsController.deleteTutor);
 

@@ -7,6 +7,107 @@ const prisma = require('../config/prisma');
 const { sendBookingNotification, sendCommunicationNotification } = require('../services/email.service');
 
 /**
+ * Normalizza un numero di telefono rimuovendo spazi, trattini e prefisso +39
+ * Es: "+39 329 413 4509" -> "3294134509"
+ *     "329-413-4509" -> "3294134509"
+ *     "3294134509" -> "3294134509"
+ */
+function normalizePhone(phone) {
+    if (!phone) return '';
+    // Rimuove spazi, trattini, punti e parentesi
+    let normalized = phone.replace(/[\s\-\.\(\)]/g, '');
+    // Rimuove prefisso +39 o 0039
+    normalized = normalized.replace(/^(\+39|0039)/, '');
+    return normalized;
+}
+
+/**
+ * POST /api/bookings/public/verify-student
+ * Verifica se lo studente è iscritto controllando telefono + cognome/nome
+ */
+const verifyStudent = async (req, res, next) => {
+    try {
+        const { studentName, studentSurname, studentPhone } = req.body;
+
+        if (!studentPhone || !studentSurname) {
+            return res.status(400).json({
+                authorized: false,
+                error: 'Cognome e telefono sono obbligatori'
+            });
+        }
+
+        const normalizedInput = normalizePhone(studentPhone);
+
+        if (!normalizedInput || normalizedInput.length < 9) {
+            return res.status(400).json({
+                authorized: false,
+                error: 'Numero di telefono non valido'
+            });
+        }
+
+        // Cerca tutti gli studenti attivi
+        const students = await prisma.student.findMany({
+            where: {
+                active: true
+            },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                studentPhone: true,
+                parentPhone: true
+            }
+        });
+
+        // Cerca uno studente con numero di telefono corrispondente (normalizzato)
+        const matchingStudent = students.find(student => {
+            const normalizedStudentPhone = normalizePhone(student.studentPhone);
+            const normalizedParentPhone = normalizePhone(student.parentPhone);
+            return normalizedStudentPhone === normalizedInput || normalizedParentPhone === normalizedInput;
+        });
+
+        if (!matchingStudent) {
+            return res.json({
+                authorized: false,
+                error: 'Non sei iscritto. Se vuoi prenotarti, chiama o scrivi al +39 351 400 2510 e fissa un appuntamento.'
+            });
+        }
+
+        // Numero trovato! Ora verifica cognome (case-insensitive)
+        const surnameMatches = matchingStudent.lastName.toLowerCase() === studentSurname.trim().toLowerCase();
+
+        if (surnameMatches) {
+            return res.json({
+                authorized: true,
+                studentId: matchingStudent.id,
+                studentName: matchingStudent.firstName,
+                studentSurname: matchingStudent.lastName
+            });
+        }
+
+        // Cognome non corrisponde, verifica nome (case-insensitive)
+        if (studentName && matchingStudent.firstName.toLowerCase() === studentName.trim().toLowerCase()) {
+            return res.json({
+                authorized: true,
+                studentId: matchingStudent.id,
+                studentName: matchingStudent.firstName,
+                studentSurname: matchingStudent.lastName
+            });
+        }
+
+        // Né cognome né nome corrispondono
+        return res.json({
+            authorized: false,
+            error: 'I dati inseriti non corrispondono. Verifica nome e cognome e riprova.'
+        });
+
+    } catch (error) {
+        console.error('Errore verifica studente:', error);
+        next(error);
+    }
+};
+
+/**
  * POST /api/bookings/public
  * Crea una nuova prenotazione (endpoint pubblico)
  */
@@ -280,6 +381,7 @@ module.exports = {
     getPublicMaterie,
     checkDuplicateBooking,
     addCommunication,
+    verifyStudent,
     getBookings,
     updateBookingStatus,
     deleteBooking

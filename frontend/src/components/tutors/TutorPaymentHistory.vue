@@ -80,10 +80,11 @@
                   @click="openDetails(item)"
                 >👁️</button>
                 <button 
-                  v-if="item.paidAmount === 0"
                   class="btn-icon" 
-                  title="Modifica Importo"
-                  @click="$emit('modify-amount', item)"
+                  :class="{ 'btn-disabled': !isMonthEnded(item.mese) }"
+                  :title="isMonthEnded(item.mese) ? 'Modifica Importo' : 'Modifica disponibile dal prossimo mese'"
+                  :disabled="!isMonthEnded(item.mese)"
+                  @click="isMonthEnded(item.mese) && $emit('modify-amount', item)"
                 >✏️</button>
                 <button 
                   class="btn-icon" 
@@ -179,8 +180,12 @@ const history = computed(() => {
 });
 
 const totalPaid = computed(() => history.value.reduce((sum, h) => sum + h.paidAmount, 0));
-const totalUnpaid = computed(() => history.value.reduce((sum, h) => sum + h.remainingAmount, 0));
-const unpaidCount = computed(() => history.value.filter(h => h.remainingAmount > 0).length);
+// Exclude Pro Bono from unpaid calculations - Pro Bono counts as fully paid
+const totalUnpaid = computed(() => history.value
+  .filter(h => h.status !== 'PRO_BONO')
+  .reduce((sum, h) => sum + h.remainingAmount, 0));
+const unpaidCount = computed(() => history.value
+  .filter(h => h.remainingAmount > 0 && h.status !== 'PRO_BONO').length);
 const proBonoCount = computed(() => history.value.filter(h => h.status === 'PRO_BONO').length);
 
 function formatCurrency(val) {
@@ -218,6 +223,18 @@ function openDetails(item) {
 function closeDetailsModal() {
   showDetailsModal.value = false;
   selectedDetailItem.value = null;
+}
+
+// Controlla se il mese è terminato (es. per Dicembre 2025, si sblocca dall'1 Gennaio 2026)
+function isMonthEnded(meseStr) {
+  if (!meseStr) return false;
+  const meseDate = new Date(meseStr);
+  const now = new Date();
+  
+  // Il mese termina quando siamo in un mese successivo
+  // Es: se meseDate è Dicembre 2025, si sblocca quando now >= Gennaio 2026
+  const meseSuccessivo = new Date(meseDate.getFullYear(), meseDate.getMonth() + 1, 1);
+  return now >= meseSuccessivo;
 }
 </script>
 
@@ -327,6 +344,8 @@ function closeDetailsModal() {
 }
 .btn-icon:hover { background: #f8f9fa; }
 .btn-pay { border-color: #2dce89; color: #2dce89; }
+.btn-disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-disabled:hover { background: transparent; }
 .text-success { color: #2dce89; font-weight: 600; }
 .text-danger { color: #f5365c; font-weight: 600; }
 

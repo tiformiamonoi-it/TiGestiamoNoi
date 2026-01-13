@@ -35,6 +35,7 @@ model User {
   tutorProfile        TutorProfile?
   lessonsAsTutor      Lesson[]           @relation("TutorLessons")
   tutorPayments       TutorPayment[]
+  tutorReimbursements TutorReimbursement[]
   tutorAvailabilities TutorAvailability[]
   bookingAssignments  Booking[]          @relation("BookingAssignments")
   
@@ -447,6 +448,9 @@ model AccountingEntry {
   tutorPaymentId String? @unique
   tutorPayment   TutorPayment? @relation(fields: [tutorPaymentId], references: [id], onDelete: SetNull)
 
+  reimbursementId String?
+  reimbursement   TutorReimbursement? @relation(fields: [reimbursementId], references: [id], onDelete: SetNull)
+
   metodoPagamento PaymentMethod?
   fatturaEmessa   Boolean @default(false)
 
@@ -457,6 +461,7 @@ model AccountingEntry {
   updatedAt DateTime @updatedAt
 
   @@index([data, tipo])
+  @@index([reimbursementId])
   @@map("accounting_entries")
 }
 
@@ -521,6 +526,43 @@ enum TutorPaymentStatus {
   PAGATO
   PARZIALE
   PRO_BONO
+}
+
+// ============================================
+// RIMBORSI TUTOR
+// ============================================
+
+model TutorReimbursement {
+  id            String   @id @default(cuid())
+  tutorId       String
+  tutor         User     @relation(fields: [tutorId], references: [id])
+  
+  importo       Decimal  @db.Decimal(10, 2)  // Importo totale rimborso
+  importoPagato Decimal  @default(0) @db.Decimal(10, 2) // Quanto pagato
+  descrizione   String   // Es: "Trasferta Milano"
+  
+  dataRichiesta DateTime @default(now())
+  dataPagamento DateTime?
+  
+  stato         ReimbursementStatus @default(DA_PAGARE)
+  metodo        PaymentMethod?
+  
+  note          String?
+  
+  // Relazione con contabilità (1:many - può avere più pagamenti/acconti)
+  movimentiContabili AccountingEntry[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("tutor_reimbursements")
+  @@index([tutorId, stato])
+}
+
+enum ReimbursementStatus {
+  DA_PAGARE
+  PARZIALE
+  PAGATO
 }
 
 // ============================================

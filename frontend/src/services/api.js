@@ -292,6 +292,9 @@ export const bookingAPI = {
   // Invia comunicazione (pubblico)
   sendCommunication: (data) => api.post('/bookings/public/communication', data),
 
+  // Verifica studente iscritto (pubblico)
+  verifyStudent: (data) => api.post('/bookings/public/verify-student', data),
+
   // Admin: lista prenotazioni
   getAll: (params) => api.get('/bookings', { params }),
 

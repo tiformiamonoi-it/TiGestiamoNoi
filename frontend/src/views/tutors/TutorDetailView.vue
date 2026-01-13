@@ -191,6 +191,14 @@
           />
         </div>
 
+        <!-- Tab 3: Rimborsi -->
+        <div v-if="activeTab === 'rimborsi'" class="tab-pane">
+          <TutorReimbursements 
+            :tutor-id="tutorId" 
+            @refresh="fetchTutor"
+          />
+        </div>
+
         <!-- Tab 3: Statistiche -->
         <div v-if="activeTab === 'statistiche'" class="tab-pane">
           <div class="stats-grid">
@@ -212,9 +220,215 @@
             </div>
           </div>
           
+          <!-- Performance Mensile -->
           <div class="section-card mt-6">
-            <h3>📈 Performance Mensile</h3>
-            <p class="text-muted">Grafico in arrivo...</p>
+            <div class="section-header-flex">
+              <h3>📈 Performance Mensile</h3>
+              <div class="header-controls">
+                <select v-model="selectedMonths" @change="loadMonthlyPerformance" class="month-selector">
+                  <option :value="0">Mese corrente</option>
+                  <option :value="3">Ultimi 3 mesi</option>
+                  <option :value="6">Ultimi 6 mesi</option>
+                  <option :value="12">Ultimo anno</option>
+                  <option :value="24">Ultimi 2 anni</option>
+                </select>
+                <button class="btn-refresh" @click="loadMonthlyPerformance" title="Aggiorna">🔄</button>
+              </div>
+            </div>
+            
+            <!-- Loading -->
+            <div v-if="performanceLoading" class="loading-state">
+              Caricamento...
+            </div>
+            
+            <template v-else-if="monthlyPerformance.length > 0">
+              <!-- KPI Cards -->
+              <div class="performance-kpis">
+                <div class="kpi-card success">
+                  <span class="kpi-label">💰 Margine Totale ({{ selectedMonths }} mesi)</span>
+                  <span class="kpi-value">€{{ performanceTotals.margine?.toFixed(2) || '0.00' }}</span>
+                </div>
+                <div class="kpi-card info">
+                  <span class="kpi-label">📊 Margine Medio Mensile</span>
+                  <span class="kpi-value">€{{ performanceTotals.mediaMargineMensile || 0 }}</span>
+                </div>
+                <div class="kpi-card primary">
+                  <span class="kpi-label">📈 Margine %</span>
+                  <span class="kpi-value">{{ performanceTotals.marginePercentuale || 0 }}%</span>
+                </div>
+              </div>
+
+              <!-- Bar Chart -->
+              <div class="chart-container">
+                <h4>Andamento Margine</h4>
+                <div class="bar-chart">
+                  <div 
+                    v-for="item in monthlyPerformance" 
+                    :key="item.mese" 
+                    class="bar-item"
+                    :title="`${item.meseLabel}: €${item.margine}`"
+                  >
+                    <div class="bar-wrapper">
+                      <div 
+                        class="bar" 
+                        :style="{ height: getBarHeight(item.margine) + '%' }"
+                        :class="{ 'bar-negative': item.margine < 0 }"
+                      >
+                        <span class="bar-value">€{{ item.margine }}</span>
+                      </div>
+                    </div>
+                    <span class="bar-label">{{ item.meseLabel }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Table -->
+              <div class="performance-table-container">
+                <table class="performance-table">
+                  <thead>
+                    <tr>
+                      <th>Mese</th>
+                      <th>Lezioni</th>
+                      <th>Ore</th>
+                      <th>Studenti</th>
+                      <th>Ricavo</th>
+                      <th>Compenso</th>
+                      <th>Margine</th>
+                      <th>%</th>
+                      <th>€/Lezione</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in monthlyPerformance" :key="item.mese">
+                      <td class="font-bold">{{ item.meseLabel }}</td>
+                      <td>{{ item.numLezioni }}</td>
+                      <td>{{ item.oreTotali }}h</td>
+                      <td>{{ item.numStudenti }}</td>
+                      <td class="text-primary">€{{ item.ricavoGenerato.toFixed(2) }}</td>
+                      <td class="text-danger">€{{ item.compensoTutor.toFixed(2) }}</td>
+                      <td class="text-success font-bold">€{{ item.margine.toFixed(2) }}</td>
+                      <td>
+                        <span :class="['badge', item.marginePercentuale >= 60 ? 'badge-success' : 'badge-warning']">
+                          {{ item.marginePercentuale }}%
+                        </span>
+                      </td>
+                      <td>€{{ item.mediaEntrateLezione.toFixed(2) }}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr class="totals-row">
+                      <td class="font-bold">TOTALE</td>
+                      <td>{{ performanceTotals.lezioni }}</td>
+                      <td>{{ performanceTotals.ore }}h</td>
+                      <td>-</td>
+                      <td class="text-primary font-bold">€{{ performanceTotals.ricavo?.toFixed(2) }}</td>
+                      <td class="text-danger font-bold">€{{ performanceTotals.compenso?.toFixed(2) }}</td>
+                      <td class="text-success font-bold">€{{ performanceTotals.margine?.toFixed(2) }}</td>
+                      <td>
+                        <span class="badge badge-primary">{{ performanceTotals.marginePercentuale }}%</span>
+                      </td>
+                      <td>-</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </template>
+            
+            <div v-else class="empty-state">
+              <p>Nessun dato disponibile per la performance mensile</p>
+            </div>
+          </div>
+
+          <!-- Distribuzione Ore per Tipo -->
+          <div class="section-card mt-6">
+            <div class="section-header-flex">
+              <h3>📊 Distribuzione Ore per Tipo</h3>
+            </div>
+            <div v-if="detailedStatsLoading" class="loading-state">Caricamento...</div>
+            <div v-else-if="detailedStats" class="distribution-chart">
+              <div class="dist-row">
+                <span class="dist-label">Singole</span>
+                <div class="dist-bar-container">
+                  <div class="dist-bar singole" :style="{ width: detailedStats.distribuzioneOre?.singole?.percentuale + '%' }"></div>
+                </div>
+                <span class="dist-value">{{ detailedStats.distribuzioneOre?.singole?.ore || 0 }}h ({{ detailedStats.distribuzioneOre?.singole?.percentuale || 0 }}%)</span>
+              </div>
+              <div class="dist-row">
+                <span class="dist-label">Gruppo</span>
+                <div class="dist-bar-container">
+                  <div class="dist-bar gruppo" :style="{ width: detailedStats.distribuzioneOre?.gruppo?.percentuale + '%' }"></div>
+                </div>
+                <span class="dist-value">{{ detailedStats.distribuzioneOre?.gruppo?.ore || 0 }}h ({{ detailedStats.distribuzioneOre?.gruppo?.percentuale || 0 }}%)</span>
+              </div>
+              <div class="dist-row">
+                <span class="dist-label">Maxi</span>
+                <div class="dist-bar-container">
+                  <div class="dist-bar maxi" :style="{ width: detailedStats.distribuzioneOre?.maxi?.percentuale + '%' }"></div>
+                </div>
+                <span class="dist-value">{{ detailedStats.distribuzioneOre?.maxi?.ore || 0 }}h ({{ detailedStats.distribuzioneOre?.maxi?.percentuale || 0 }}%)</span>
+              </div>
+            </div>
+            <div v-else class="empty-state"><p>Nessun dato disponibile</p></div>
+          </div>
+
+          <!-- Top 5 Alunni -->
+          <div class="section-card mt-6">
+            <div class="section-header-flex">
+              <h3>👥 Top 5 Alunni</h3>
+            </div>
+            <div v-if="detailedStatsLoading" class="loading-state">Caricamento...</div>
+            <div v-else-if="detailedStats?.top5Alunni?.length > 0" class="top-alunni-list">
+              <div 
+                v-for="(alunno, idx) in detailedStats.top5Alunni" 
+                :key="alunno.id" 
+                class="top-alunno-item"
+                @click="$router.push('/students/' + alunno.id)"
+              >
+                <span class="rank">{{ idx + 1 }}.</span>
+                <span class="alunno-nome">{{ alunno.nome }}</span>
+                <span class="alunno-stats">{{ alunno.ore }}h ({{ alunno.lezioni }} lezioni)</span>
+              </div>
+            </div>
+            <div v-else class="empty-state"><p>Nessun alunno nel periodo selezionato</p></div>
+          </div>
+
+          <!-- Giorni/Orari Preferiti -->
+          <div class="section-card mt-6">
+            <div class="section-header-flex">
+              <h3>📅 Giorni/Orari Preferiti</h3>
+            </div>
+            <div v-if="detailedStatsLoading" class="loading-state">Caricamento...</div>
+            <div v-else-if="detailedStats" class="preferiti-container">
+              <div class="preferiti-section">
+                <h4>Giorni più attivi</h4>
+                <div class="preferiti-list">
+                  <div 
+                    v-for="g in detailedStats.giorniPreferiti?.slice(0, 3)" 
+                    :key="g.giorno" 
+                    class="preferiti-item"
+                  >
+                    <span class="preferiti-label">{{ g.giorno }}</span>
+                    <span class="preferiti-count">{{ g.count }} lezioni ({{ g.percentuale }}%)</span>
+                  </div>
+                  <div v-if="!detailedStats.giorniPreferiti?.length" class="text-muted">Nessun dato</div>
+                </div>
+              </div>
+              <div class="preferiti-section">
+                <h4>Orari più frequenti</h4>
+                <div class="preferiti-list">
+                  <div 
+                    v-for="o in detailedStats.orariPreferiti?.slice(0, 3)" 
+                    :key="o.fascia" 
+                    class="preferiti-item"
+                  >
+                    <span class="preferiti-label">{{ o.fascia }}</span>
+                    <span class="preferiti-count">{{ o.count }} lezioni ({{ o.percentuale }}%)</span>
+                  </div>
+                  <div v-if="!detailedStats.orariPreferiti?.length" class="text-muted">Nessun dato</div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-state"><p>Nessun dato disponibile</p></div>
           </div>
         </div>
 
@@ -265,6 +479,55 @@
       @close="showEditPaymentModal = false"
       @save="handleEditPaymentSave"
     />
+
+    <!-- Modal Modifica Importo Compenso -->
+    <Teleport to="body">
+      <div v-if="showModifyAmountModal" class="modal-overlay" @click.self="showModifyAmountModal = false">
+        <div class="modal-container modify-amount-modal">
+          <div class="modal-header">
+            <h3>✏️ Modifica Compenso {{ modifyAmountData.meseLabel }}</h3>
+            <button class="btn-close" @click="showModifyAmountModal = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="info-box mb-4">
+              <p class="text-muted">Stai modificando il compenso calcolato automaticamente dalle lezioni. Questa modifica sovrascriverà il calcolo automatico per questo mese.</p>
+            </div>
+            <div class="form-group">
+              <label>Importo Originale (calcolato)</label>
+              <input 
+                type="text" 
+                :value="'€' + Number(modifyAmountData.importoOriginale).toFixed(2)"
+                disabled
+                class="form-input disabled"
+              />
+            </div>
+            <div class="form-group">
+              <label>Nuovo Importo (€) *</label>
+              <input 
+                type="number" 
+                v-model="modifyAmountData.nuovoImporto" 
+                step="0.01" 
+                min="0"
+                class="form-input"
+              />
+            </div>
+            <div class="form-group">
+              <label>Nota (motivo modifica)</label>
+              <textarea 
+                v-model="modifyAmountData.note" 
+                placeholder="Es: Bonus, Detrazione, Correzione..."
+                class="form-input"
+                rows="2"
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="showModifyAmountModal = false">Annulla</button>
+            <button class="btn-primary" @click="saveModifyAmount">Salva Modifica</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -276,6 +539,7 @@ import TutorRating from '@/components/tutors/TutorRating.vue';
 import TutorPaymentHistory from '@/components/tutors/TutorPaymentHistory.vue';
 import TutorStudentsList from '@/components/tutors/TutorStudentsList.vue';
 import TutorSubjectsModal from '@/components/tutors/TutorSubjectsModal.vue';
+import TutorReimbursements from '@/components/tutors/TutorReimbursements.vue';
 
 import PaymentModal from '@/components/tutors/PaymentModal.vue';
 import TutorRatingModal from '@/components/tutors/TutorRatingModal.vue';
@@ -299,9 +563,29 @@ const showEditModal = ref(false);
 const showMenu = ref(false);
 const tutorsForPayment = ref([]);
 
+// Modifica Importo Compenso
+const showModifyAmountModal = ref(false);
+const modifyAmountData = ref({
+  mese: null,
+  importoOriginale: 0,
+  nuovoImporto: 0,
+  note: ''
+});
+
+// Performance Mensile
+const monthlyPerformance = ref([]);
+const performanceTotals = ref({});
+const performanceLoading = ref(false);
+const selectedMonths = ref(6);
+
+// Detailed Stats (distribuzione ore, top 5, preferiti)
+const detailedStats = ref(null);
+const detailedStatsLoading = ref(false);
+
 const tabs = [
   { id: 'anagrafica', label: 'Anagrafica' },
   { id: 'compensi', label: 'Storico Compensi' },
+  { id: 'rimborsi', label: 'Rimborsi' },
   { id: 'statistiche', label: 'Statistiche' },
   { id: 'alunni', label: 'Alunni Seguiti' },
   { id: 'cronologia', label: 'Cronologia' },
@@ -321,6 +605,7 @@ const unpaidAlert = computed(() => {
 
 onMounted(async () => {
   await fetchTutor();
+  loadMonthlyPerformance(); // Carica performance in background
 });
 
 async function fetchTutor() {
@@ -344,6 +629,44 @@ function hasEmail(t) {
 
 function hasPhone(t) {
   return t?.phone && t.phone.trim() !== '';
+}
+
+// Performance Mensile
+async function loadMonthlyPerformance() {
+  performanceLoading.value = true;
+  try {
+    const response = await api.get(`/tutors/${tutorId}/monthly-performance?mesi=${selectedMonths.value}`);
+    monthlyPerformance.value = response.data.performance || [];
+    performanceTotals.value = response.data.totali || {};
+  } catch (error) {
+    console.error('Errore caricamento performance:', error);
+    monthlyPerformance.value = [];
+  } finally {
+    performanceLoading.value = false;
+  }
+  
+  // Also load detailed stats with same period
+  loadDetailedStats();
+}
+
+// Detailed Stats (distribuzione ore, top 5, preferiti)
+async function loadDetailedStats() {
+  detailedStatsLoading.value = true;
+  try {
+    const response = await api.get(`/tutors/${tutorId}/detailed-stats?mesi=${selectedMonths.value}&includeCurrent=true`);
+    detailedStats.value = response.data;
+  } catch (error) {
+    console.error('Errore caricamento detailed stats:', error);
+    detailedStats.value = null;
+  } finally {
+    detailedStatsLoading.value = false;
+  }
+}
+
+function getBarHeight(margine) {
+  if (!monthlyPerformance.value.length) return 0;
+  const maxMargine = Math.max(...monthlyPerformance.value.map(p => Math.abs(p.margine)), 1);
+  return Math.min(100, (Math.abs(margine) / maxMargine) * 100);
 }
 
 function goToCalendar() {
@@ -560,14 +883,18 @@ const fullPaymentHistory = computed(() => {
     
     entry.calculatedTotal = Math.floor(totalCalculated);
 
-    if (entry.paidAmount > 0 && entry.remainingAmount > 0.01) {
+    // Check for Pro Bono FIRST - if any payment is Pro Bono, the whole month is considered paid
+    const hasProBonoPayment = entry.payments.some(p => p.proBono || p.status === 'PRO_BONO');
+    
+    if (hasProBonoPayment) {
+      entry.status = 'PRO_BONO';
+      entry.remainingAmount = 0; // Pro Bono = fully covered
+      // Keep totalAmount as calculated for display (original amount)
+      entry.totalAmount = entry.calculatedTotal || entry.totalAmount;
+    } else if (entry.paidAmount > 0 && entry.remainingAmount > 0.01) {
       entry.status = 'PARZIALE';
     } else if (entry.remainingAmount <= 0.01 && entry.paidAmount > 0) {
       entry.status = 'PAGATO';
-      // Check if any payment was pro-bono
-      if (entry.payments.some(p => p.proBono || p.status === 'PRO_BONO')) {
-        entry.status = 'PRO_BONO'; // Or handle mixed status
-      }
     } else {
       entry.status = 'DA_PAGARE';
     }
@@ -620,7 +947,37 @@ async function handleDeletePayment(payment) {
 }
 
 function handleModifyAmount(item) {
-  alert('Funzionalità di modifica importo manuale in arrivo. Per ora, modifica le lezioni associate per ricalcolare il totale.');
+  modifyAmountData.value = {
+    mese: item.mese,
+    importoOriginale: item.totalAmount,
+    nuovoImporto: item.totalAmount,
+    note: '',
+    meseLabel: new Date(item.mese).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })
+  };
+  showModifyAmountModal.value = true;
+}
+
+async function saveModifyAmount() {
+  try {
+    const { mese, nuovoImporto, note } = modifyAmountData.value;
+    
+    if (!nuovoImporto || nuovoImporto < 0) {
+      alert('Inserisci un importo valido');
+      return;
+    }
+    
+    await api.put(`/tutors/${tutorId}/compenso-mensile`, {
+      mese,
+      nuovoImporto: parseFloat(nuovoImporto),
+      note
+    });
+    
+    showModifyAmountModal.value = false;
+    await fetchTutor();
+    alert('✅ Importo compenso aggiornato con successo!');
+  } catch (e) {
+    alert('Errore: ' + (e.response?.data?.error || e.message));
+  }
 }
 
 function handleHistoryExport(item) {
@@ -1122,4 +1479,521 @@ async function deleteTutor() {
 }
 
 .text-muted { color: #8392ab; font-size: 14px; }
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.modal-container {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 450px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #344767;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #8392ab;
+  padding: 4px;
+}
+
+.btn-close:hover {
+  color: #344767;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #344767;
+}
+
+.form-input {
+  padding: 10px 12px;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #344767;
+  transition: border-color 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #5e72e4;
+}
+
+.form-input.disabled {
+  background: #f6f9fc;
+  color: #8392ab;
+}
+
+.info-box {
+  background: #f8f9fe;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid #5e72e4;
+}
+
+.mb-4 { margin-bottom: 16px; }
+
+.btn-primary {
+  background: linear-gradient(135deg, #5e72e4 0%, #825ee4 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(94, 114, 228, 0.4);
+}
+
+.btn-secondary {
+  background: white;
+  color: #344767;
+  border: 1px solid #e9ecef;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #f8f9fa;
+}
+
+/* Performance Mensile */
+.section-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header-flex h3 {
+  margin: 0;
+}
+
+.btn-refresh {
+  background: none;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-refresh:hover {
+  background: #f8f9fa;
+}
+
+.header-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.month-selector {
+  padding: 6px 12px;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #344767;
+  background: white;
+  cursor: pointer;
+}
+
+.month-selector:focus {
+  outline: none;
+  border-color: #5e72e4;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 40px;
+  color: #8392ab;
+}
+
+.performance-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.kpi-card {
+  padding: 16px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpi-card.success {
+  background: linear-gradient(135deg, #2dce89 0%, #26a65b 100%);
+  color: white;
+}
+
+.kpi-card.info {
+  background: linear-gradient(135deg, #11cdef 0%, #1171ef 100%);
+  color: white;
+}
+
+.kpi-card.primary {
+  background: linear-gradient(135deg, #5e72e4 0%, #825ee4 100%);
+  color: white;
+}
+
+.kpi-label {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.kpi-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* Bar Chart */
+.chart-container {
+  background: #f8f9fe;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.chart-container h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: #344767;
+}
+
+.bar-chart {
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  height: 200px;
+  gap: 8px;
+}
+
+.bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  max-width: 80px;
+}
+
+.bar-wrapper {
+  width: 100%;
+  height: 160px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.bar {
+  width: 100%;
+  max-width: 50px;
+  background: linear-gradient(180deg, #2dce89 0%, #26a65b 100%);
+  border-radius: 6px 6px 0 0;
+  min-height: 10px;
+  transition: height 0.5s ease;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+.bar-negative {
+  background: linear-gradient(180deg, #f5365c 0%, #d31f4a 100%);
+}
+
+.bar-value {
+  font-size: 10px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.bar-label {
+  font-size: 11px;
+  color: #8392ab;
+  margin-top: 8px;
+  text-align: center;
+}
+
+/* Performance Table */
+.performance-table-container {
+  overflow-x: auto;
+}
+
+.performance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.performance-table th,
+.performance-table td {
+  padding: 10px 8px;
+  text-align: center;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.performance-table th {
+  background: #f8f9fe;
+  color: #8392ab;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.performance-table td:first-child,
+.performance-table th:first-child {
+  text-align: left;
+}
+
+.performance-table .font-bold {
+  font-weight: 600;
+}
+
+.performance-table .text-primary {
+  color: #5e72e4;
+}
+
+.performance-table .text-danger {
+  color: #f5365c;
+}
+
+.performance-table .text-success {
+  color: #2dce89;
+}
+
+.totals-row {
+  background: #f8f9fe;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.badge-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.badge-primary {
+  background: #e8e9fc;
+  color: #5e72e4;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #8392ab;
+}
+
+/* Distribution Chart Styles */
+.distribution-chart {
+  padding: 16px 0;
+}
+
+.dist-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dist-label {
+  width: 70px;
+  font-weight: 600;
+  color: #344767;
+  font-size: 14px;
+}
+
+.dist-bar-container {
+  flex: 1;
+  height: 24px;
+  background: #f1f1f1;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dist-bar {
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.5s ease;
+}
+
+.dist-bar.singole {
+  background: linear-gradient(135deg, #5e72e4, #825ee4);
+}
+
+.dist-bar.gruppo {
+  background: linear-gradient(135deg, #2dce89, #1aae6f);
+}
+
+.dist-bar.maxi {
+  background: linear-gradient(135deg, #fb6340, #f5365c);
+}
+
+.dist-value {
+  width: 100px;
+  text-align: right;
+  font-size: 13px;
+  color: #8392ab;
+  font-family: monospace;
+}
+
+/* Top Alunni List Styles */
+.top-alunni-list {
+  padding: 8px 0;
+}
+
+.top-alunno-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.top-alunno-item:hover {
+  background: #f8f9fa;
+}
+
+.top-alunno-item .rank {
+  font-weight: 700;
+  color: #5e72e4;
+  font-size: 16px;
+  width: 24px;
+}
+
+.top-alunno-item .alunno-nome {
+  flex: 1;
+  font-weight: 600;
+  color: #344767;
+}
+
+.top-alunno-item .alunno-stats {
+  color: #8392ab;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+/* Preferiti Container Styles */
+.preferiti-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding: 8px 0;
+}
+
+.preferiti-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #344767;
+  font-weight: 600;
+}
+
+.preferiti-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preferiti-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.preferiti-label {
+  font-weight: 600;
+  color: #344767;
+  font-size: 14px;
+}
+
+.preferiti-count {
+  color: #8392ab;
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .preferiti-container {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

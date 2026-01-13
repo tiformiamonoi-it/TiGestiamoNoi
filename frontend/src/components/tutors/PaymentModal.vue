@@ -30,28 +30,44 @@
                       <span>{{ formatMese(mese.date) }}</span>
                     </label>
                     <div class="amount-controls" v-if="mese.selected">
-                       <select v-model="mese.status" class="status-select">
-                         <option value="PAGATO">Completo</option>
-                         <option value="PARZIALE">Parziale</option>
-                       </select>
-                       <div class="input-wrapper">
-                         <input 
-                           type="number" 
-                           v-model.number="mese.importo" 
-                           class="amount-input" 
-                           :class="{ 'is-invalid': mese.importo > mese.originalImporto }"
-                           step="0.01"
-                           min="0"
-                         />
-                         <span class="currency">€</span>
+                       <!-- Pro Bono Toggle -->
+                       <label class="probono-toggle" :class="{ active: mese.proBono }">
+                         <input type="checkbox" v-model="mese.proBono" />
+                         <span class="toggle-label">🎁</span>
+                       </label>
+                       
+                       <!-- Amount display when Pro Bono -->
+                       <div v-if="mese.proBono" class="probono-display">
+                         <span class="original-strikethrough">{{ mese.originalImporto }}€</span>
+                         <span class="probono-amount">0€</span>
                        </div>
-                       <span class="original-amount-label">su {{ mese.originalImporto }}€</span>
+                       
+                       <!-- Normal payment controls -->
+                       <template v-else>
+                         <select v-model="mese.status" class="status-select">
+                           <option value="PAGATO">Completo</option>
+                           <option value="PARZIALE">Parziale</option>
+                         </select>
+                         <div class="input-wrapper">
+                           <input 
+                             type="number" 
+                             v-model.number="mese.importo" 
+                             class="amount-input" 
+                             :class="{ 'is-invalid': mese.importo > mese.originalImporto }"
+                             step="0.01"
+                             min="0"
+                           />
+                           <span class="currency">€</span>
+                         </div>
+                         <span class="original-amount-label">su {{ mese.originalImporto }}€</span>
+                       </template>
                     </div>
                     <span v-else class="month-amount">{{ mese.importo }}€</span>
                   </div>
-                  <div v-if="mese.selected && mese.importo > mese.originalImporto" class="error-message">
+                  <div v-if="mese.selected && !mese.proBono && mese.importo > mese.originalImporto" class="error-message">
                     ⚠️ L'importo non può superare il dovuto ({{ mese.originalImporto }}€)
                   </div>
+
                 </div>
               </div>
             </div>
@@ -96,7 +112,7 @@
           </button>
           <button 
             @click="confirmPayment" 
-            :disabled="totaleSelezionato <= 0 || isSubmitting || hasErrors"
+            :disabled="!hasSelectedItems || isSubmitting || hasErrors"
             class="btn-primary"
           >
             <span v-if="isSubmitting">Salvataggio...</span>
@@ -131,6 +147,9 @@ const pagamenti = ref([]);
 
 watch(() => props.tutorsToPay, (newVal) => {
   if (newVal) {
+    // Reset stato quando il modal si apre con nuovi dati
+    isSubmitting.value = false;
+    
     pagamenti.value = newVal.map(t => ({
       tutorId: t.id,
       tutorName: `${t.firstName} ${t.lastName}`,
@@ -139,6 +158,7 @@ watch(() => props.tutorsToPay, (newVal) => {
         importo: m.importo,
         originalImporto: m.importo, // Keep track of original
         status: 'PAGATO',
+        proBono: false, // Pro Bono flag
         selected: true, // Default selected
       })),
     }));
@@ -164,7 +184,10 @@ const totaleSelezionato = computed(() => {
   let sum = 0;
   pagamenti.value.forEach(p => {
     p.mesiDettaglio.forEach(m => {
-      if (m.selected) sum += Number(m.importo);
+      if (m.selected) {
+        // Pro Bono counts as 0
+        sum += m.proBono ? 0 : Number(m.importo);
+      }
     });
   });
   return sum;
@@ -182,7 +205,14 @@ const totaleOriginale = computed(() => {
 
 const hasErrors = computed(() => {
   return pagamenti.value.some(p => 
-    p.mesiDettaglio.some(m => m.selected && m.importo > m.originalImporto)
+    p.mesiDettaglio.some(m => m.selected && !m.proBono && m.importo > m.originalImporto)
+  );
+});
+
+// Check if at least one month is selected (for Pro Bono which can have 0€ total)
+const hasSelectedItems = computed(() => {
+  return pagamenti.value.some(p => 
+    p.mesiDettaglio.some(m => m.selected)
   );
 });
 
@@ -196,25 +226,29 @@ function close() {
 }
 
 async function confirmPayment() {
+  // Previeni click multipli
+  if (isSubmitting.value) return;
+  
   isSubmitting.value = true;
-  try {
-    // Prepara payload
-    const payload = pagamenti.value.map(p => ({
-      tutorId: p.tutorId,
-      mesi: p.mesiDettaglio.filter(m => m.selected).map(m => ({
-        date: m.date,
-        importo: m.importo,
-        status: m.status
-      })),
-    })).filter(p => p.mesi.length > 0);
+  
+  // Prepara payload
+  const payload = pagamenti.value.map(p => ({
+    tutorId: p.tutorId,
+    mesi: p.mesiDettaglio.filter(m => m.selected).map(m => ({
+      date: m.date,
+      importo: m.proBono ? 0 : m.importo,
+      status: m.proBono ? 'PRO_BONO' : m.status,
+      proBono: m.proBono
+    })),
+  })).filter(p => p.mesi.length > 0);
 
-    emit('confirm', {
-      pagamenti: payload,
-      ...formData.value,
-    });
-  } finally {
-    isSubmitting.value = false;
-  }
+  emit('confirm', {
+    pagamenti: payload,
+    ...formData.value,
+  });
+  
+  // NON resettare isSubmitting qui - il modal verrà chiuso dal parent
+  // isSubmitting resta true per prevenire click multipli
 }
 </script>
 
@@ -557,5 +591,56 @@ async function confirmPayment() {
   font-size: 12px;
   color: #8392ab;
   margin-top: 4px;
+}
+
+/* Pro Bono Styles */
+.probono-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.probono-toggle:hover {
+  border-color: #5e72e4;
+  background: #f0f4ff;
+}
+
+.probono-toggle.active {
+  border-color: #2dce89;
+  background: #e8f8f1;
+}
+
+.probono-toggle input[type="checkbox"] {
+  display: none;
+}
+
+.probono-toggle .toggle-label {
+  font-size: 14px;
+}
+
+.probono-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.original-strikethrough {
+  text-decoration: line-through;
+  color: #8392ab;
+  font-size: 14px;
+  font-family: monospace;
+}
+
+.probono-amount {
+  font-weight: 700;
+  color: #2dce89;
+  font-size: 14px;
+  font-family: monospace;
 }
 </style>

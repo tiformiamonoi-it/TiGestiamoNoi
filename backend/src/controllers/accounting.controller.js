@@ -462,7 +462,8 @@ const deleteMovimento = async (req, res, next) => {
             include: {
                 payment: {
                     include: { package: true }
-                }
+                },
+                reimbursement: true
             }
         });
 
@@ -471,7 +472,7 @@ const deleteMovimento = async (req, res, next) => {
         }
 
         // Solo admin può eliminare movimenti automatici
-        const isAutomatic = existing.paymentId || existing.tutorPaymentId;
+        const isAutomatic = existing.paymentId || existing.tutorPaymentId || existing.reimbursementId;
         if (isAutomatic && req.user?.role !== 'ADMIN') {
             return res.status(403).json({ error: 'Solo admin può eliminare movimenti automatici' });
         }
@@ -503,6 +504,47 @@ const deleteMovimento = async (req, res, next) => {
 
             return res.json({
                 message: 'Movimento e pagamento pacchetto eliminati con successo. Residuo pacchetto aggiornato.'
+            });
+        }
+
+        // Se è collegato a un rimborso, aggiorna il rimborso
+        if (existing.reimbursementId && existing.reimbursement) {
+            const reimbursement = existing.reimbursement;
+            const importoPagamento = parseFloat(existing.importo);
+            const importoPagatoAttuale = parseFloat(reimbursement.importoPagato);
+            const nuovoImportoPagato = Math.max(0, importoPagatoAttuale - importoPagamento);
+            const importoTotale = parseFloat(reimbursement.importo);
+
+            // Determina il nuovo stato
+            let nuovoStato = 'DA_PAGARE';
+            if (nuovoImportoPagato <= 0.01) {
+                nuovoStato = 'DA_PAGARE';
+            } else if (nuovoImportoPagato >= importoTotale - 0.01) {
+                nuovoStato = 'PAGATO';
+            } else {
+                nuovoStato = 'PARZIALE';
+            }
+
+            // Transazione per eliminare movimento e aggiornare rimborso
+            await prisma.$transaction(async (tx) => {
+                // Elimina il movimento contabile
+                await tx.accountingEntry.delete({
+                    where: { id }
+                });
+
+                // Aggiorna il rimborso
+                await tx.tutorReimbursement.update({
+                    where: { id: existing.reimbursementId },
+                    data: {
+                        importoPagato: nuovoImportoPagato,
+                        stato: nuovoStato,
+                        dataPagamento: nuovoStato === 'PAGATO' ? reimbursement.dataPagamento : null
+                    }
+                });
+            });
+
+            return res.json({
+                message: `Movimento eliminato. Rimborso aggiornato: nuovo stato ${nuovoStato}, importo pagato €${nuovoImportoPagato.toFixed(2)}`
             });
         }
 

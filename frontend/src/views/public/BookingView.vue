@@ -34,7 +34,17 @@
         </div>
         <div class="form-group">
           <label>Telefono <span class="required">*</span></label>
-          <input type="tel" v-model="form.studentPhone" placeholder="+39 333 1234567" class="form-input" />
+          <input type="tel" v-model="form.studentPhone" placeholder="+39 333 1234567" class="form-input" @input="verifyError = ''" />
+        </div>
+
+        <!-- Messaggio errore verifica -->
+        <div v-if="verifyError" class="verify-error">
+          <span class="error-icon">⚠️</span>
+          <p>{{ verifyError }}</p>
+        </div>
+
+        <div v-if="verifyingStudent" class="verifying-msg">
+          ⏳ Verifico i tuoi dati...
         </div>
       </div>
 
@@ -189,9 +199,9 @@
         v-else-if="currentStep < 4" 
         class="btn-primary" 
         @click="nextStep"
-        :disabled="!canProceed || checkingDuplicate"
+        :disabled="!canProceed || checkingDuplicate || verifyingStudent"
       >
-        Avanti →
+        {{ verifyingStudent ? 'Verifico...' : 'Avanti →' }}
       </button>
       
       <!-- Bottone Conferma finale -->
@@ -220,6 +230,8 @@ const searchMaterie = ref('');
 const isDuplicate = ref(false);
 const existingBooking = ref(null);
 const checkingDuplicate = ref(false);
+const verifyingStudent = ref(false);
+const verifyError = ref('');
 
 const form = ref({
   studentName: '',
@@ -407,8 +419,36 @@ function toggleMateria(materia) {
   }
 }
 
-function nextStep() {
-  if (canProceed.value && currentStep.value < 4) {
+async function nextStep() {
+  if (!canProceed.value || currentStep.value >= 4) return;
+  
+  // Step 1 → 2: verifica studente prima di procedere
+  if (currentStep.value === 1) {
+    verifyingStudent.value = true;
+    verifyError.value = '';
+    
+    try {
+      const response = await bookingAPI.verifyStudent({
+        studentName: form.value.studentName,
+        studentSurname: form.value.studentSurname,
+        studentPhone: form.value.studentPhone
+      });
+      
+      if (response.data.authorized) {
+        // Verifica OK - procedi
+        currentStep.value++;
+      } else {
+        // Verifica fallita - mostra errore
+        verifyError.value = response.data.error || 'Errore durante la verifica';
+      }
+    } catch (error) {
+      console.error('Errore verifica studente:', error);
+      verifyError.value = error.response?.data?.error || 'Errore di connessione. Riprova.';
+    } finally {
+      verifyingStudent.value = false;
+    }
+  } else {
+    // Altri step: procedi normalmente
     currentStep.value++;
   }
 }
@@ -994,6 +1034,41 @@ onMounted(() => {
 
 .duplicate-alert.late-alert p {
   color: #6366f1;
+}
+
+/* Verification Error */
+.verify-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.1));
+  border: 2px solid #ef4444;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.verify-error .error-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.verify-error p {
+  margin: 0;
+  color: #dc2626;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Verifying message */
+.verifying-msg {
+  background: #eef2ff;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-top: 16px;
+  color: #6366f1;
+  font-size: 14px;
+  text-align: center;
 }
 </style>
 

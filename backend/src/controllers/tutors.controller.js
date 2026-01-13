@@ -267,9 +267,16 @@ const payTutors = async (req, res, next) => {
       for (const p of pagamenti) {
         const { tutorId, mesi } = p;
 
+        // Recupera nome tutor per la descrizione
+        const tutorData = await tx.user.findUnique({
+          where: { id: tutorId },
+          select: { firstName: true, lastName: true }
+        });
+        const tutorName = tutorData ? `${tutorData.firstName} ${tutorData.lastName}` : 'Tutor';
+
         for (const meseItem of mesi) {
           // Handle both string (old) and object (new) formats
-          let meseStr, importoOverride, statusOverride;
+          let meseStr, importoOverride, statusOverride, proBono;
 
           if (typeof meseItem === 'string') {
             meseStr = meseItem;
@@ -277,6 +284,7 @@ const payTutors = async (req, res, next) => {
             meseStr = meseItem.date;
             importoOverride = meseItem.importo;
             statusOverride = meseItem.status;
+            proBono = meseItem.proBono || false;
           }
 
           // Force UTC midnight for consistency
@@ -287,39 +295,52 @@ const payTutors = async (req, res, next) => {
           const compenso = await calcolaCompensoMese(tx, tutorId, meseDate);
 
           // Determine final amount and status
-          // If override provided, use it. Otherwise use calculated.
-          const finalImporto = importoOverride !== undefined ? parseFloat(importoOverride) : compenso.totaleArrotondato;
+          let finalImporto;
+          let status;
 
-          // Determine status
-          let status = statusOverride || 'PAGATO';
-          // Auto-detect partial if not specified and amount < calculated? 
-          // User explicitly selects status in UI now, so trust UI.
-
-          if (finalImporto > 0) {
-            const payment = await tx.tutorPayment.create({
-              data: {
-                tutorId,
-                mese: meseDate,
-                importo: finalImporto,
-                dataPagamento: new Date(dataPagamento),
-                metodo: metodoPagamento,
-                note,
-                status,
-                // Create Accounting Entry
-                movimentoContabile: {
-                  create: {
-                    tipo: 'USCITA',
-                    importo: finalImporto,
-                    descrizione: `Compenso Tutor ${meseDate.toLocaleString('it-IT', { month: 'long', year: 'numeric' })} (${status})`,
-                    categoria: 'Compenso Tutor',
-                    data: new Date(dataPagamento)
-                  }
-                }
-              },
-            });
-            results.push(payment);
+          if (proBono) {
+            // Pro Bono: importo = 0, status = PRO_BONO, NO accounting entry
+            finalImporto = 0;
+            status = 'PRO_BONO';
+          } else {
+            // Normal payment
+            finalImporto = importoOverride !== undefined ? parseFloat(importoOverride) : compenso.totaleArrotondato;
+            status = statusOverride || 'PAGATO';
           }
+
+          // Create payment record (even for Pro Bono, but with importo=0)
+          const meseLabel = meseDate.toLocaleString('it-IT', { month: 'long', year: 'numeric' });
+
+          // Build payment data
+          const paymentData = {
+            tutorId,
+            mese: meseDate,
+            importo: finalImporto,
+            dataPagamento: new Date(dataPagamento),
+            metodo: metodoPagamento,
+            note: proBono ? (note ? `${note} [PRO BONO]` : '[PRO BONO]') : note,
+            status,
+          };
+
+          // Only create accounting entry if NOT Pro Bono and importo > 0
+          if (!proBono && finalImporto > 0) {
+            paymentData.movimentoContabile = {
+              create: {
+                tipo: 'USCITA',
+                importo: finalImporto,
+                descrizione: `Compenso ${tutorName} - ${meseLabel} (${status})`,
+                categoria: 'Compenso Tutor',
+                data: new Date(dataPagamento)
+              }
+            };
+          }
+
+          const payment = await tx.tutorPayment.create({
+            data: paymentData,
+          });
+          results.push(payment);
         }
+
       }
     });
 
@@ -689,6 +710,15 @@ async function calcolaStatsTutor(tutorId, periodo) {
         },
       });
 
+      // Check if there's a Pro Bono payment - if so, month is considered fully paid
+      const hasProBono = payments.some(p => p.status === 'PRO_BONO');
+
+      if (hasProBono) {
+        // Pro Bono = fully covered, don't add to unpaid list
+        current.setMonth(current.getMonth() + 1);
+        continue;
+      }
+
       const totalePagato = payments.reduce((sum, p) => sum + Number(p.importo), 0);
       const rimanente = compenso.totaleArrotondato - totalePagato;
 
@@ -811,6 +841,418 @@ const deleteTutor = async (req, res, next) => {
   }
 };
 
+// ============================================
+// GET MONTHLY PERFORMANCE
+// ============================================
+
+/**
+ * GET /api/tutors/:id/monthly-performance
+ * Calcola performance mensile: margine, ricavo, compenso, media per lezione
+ */
+const getMonthlyPerformance = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { mesi = 6 } = req.query;
+
+    const numMesi = parseInt(mesi);
+    const now = new Date();
+    const results = [];
+
+    // Calcola per ogni mese (dal più recente al più vecchio)
+    for (let i = 0; i < numMesi; i++) {
+      const meseDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const meseEnd = new Date(meseDate.getFullYear(), meseDate.getMonth() + 1, 0, 23, 59, 59);
+
+      // Recupera lezioni del tutor per questo mese
+      const lezioni = await prisma.lesson.findMany({
+        where: {
+          tutorId: id,
+          data: { gte: meseDate, lte: meseEnd }
+        },
+        include: {
+          lessonStudents: {
+            include: {
+              student: {
+                include: {
+                  packages: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // Calcoli
+      const numLezioni = lezioni.length;
+      let oreTotali = 0;
+      let compensoTutor = 0;
+      let ricavoGenerato = 0;
+      const studentiSet = new Set();
+
+      for (const lezione of lezioni) {
+        // Ore (assumiamo 1h per lezione come default, o calcoliamo da durata)
+        oreTotali += lezione.durata || 1;
+
+        // Compenso tutor
+        compensoTutor += parseFloat(lezione.compensoTutor || 0);
+
+        // Studenti unici
+        for (const ls of lezione.lessonStudents) {
+          if (ls.student) {
+            studentiSet.add(ls.student.id);
+
+            // Ricavo: calcoliamo quanto vale questa lezione dal pacchetto studente
+            // Tariffa oraria = prezzo pacchetto / ore pacchetto
+            const pkg = ls.student.packages?.[0];
+            if (pkg && pkg.oreIncluse > 0) {
+              const tariffaOraria = parseFloat(pkg.prezzoTotale) / pkg.oreIncluse;
+              const durata = ls.mezzaLezione ? 0.5 : (lezione.durata || 1);
+              ricavoGenerato += tariffaOraria * durata;
+            } else {
+              // Fallback: usa prezzo medio lezione (25€/h)
+              const durata = ls.mezzaLezione ? 0.5 : (lezione.durata || 1);
+              ricavoGenerato += 25 * durata;
+            }
+          }
+        }
+      }
+
+      // Margine
+      const margine = ricavoGenerato - compensoTutor;
+      const marginePercentuale = ricavoGenerato > 0 ? (margine / ricavoGenerato) * 100 : 0;
+      const mediaEntrateLezione = numLezioni > 0 ? ricavoGenerato / numLezioni : 0;
+
+      results.push({
+        mese: meseDate.toISOString(),
+        meseLabel: meseDate.toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
+        numLezioni,
+        oreTotali: Math.round(oreTotali * 10) / 10,
+        numStudenti: studentiSet.size,
+        ricavoGenerato: Math.round(ricavoGenerato * 100) / 100,
+        compensoTutor: Math.round(compensoTutor * 100) / 100,
+        margine: Math.round(margine * 100) / 100,
+        marginePercentuale: Math.round(marginePercentuale),
+        mediaEntrateLezione: Math.round(mediaEntrateLezione * 100) / 100
+      });
+    }
+
+    // Calcola totali/medie
+    const totali = {
+      lezioni: results.reduce((sum, r) => sum + r.numLezioni, 0),
+      ore: results.reduce((sum, r) => sum + r.oreTotali, 0),
+      ricavo: results.reduce((sum, r) => sum + r.ricavoGenerato, 0),
+      compenso: results.reduce((sum, r) => sum + r.compensoTutor, 0),
+      margine: results.reduce((sum, r) => sum + r.margine, 0)
+    };
+    totali.marginePercentuale = totali.ricavo > 0 ? Math.round((totali.margine / totali.ricavo) * 100) : 0;
+    totali.mediaMargineMensile = results.length > 0 ? Math.round(totali.margine / results.length) : 0;
+
+    res.json({
+      performance: results.reverse(), // Dal più vecchio al più recente per il grafico
+      totali
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// UPDATE COMPENSO MENSILE (Override)
+// ============================================
+
+/**
+ * PUT /api/tutors/:id/compenso-mensile
+ * Modifica l'importo del compenso per un mese specifico
+ * Crea un record TutorPaymentAdjustment o aggiorna il compenso calcolato
+ */
+const updateCompensoMensile = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { mese, nuovoImporto, note } = req.body;
+
+    if (!mese || nuovoImporto === undefined) {
+      return res.status(400).json({ error: 'mese e nuovoImporto sono obbligatori' });
+    }
+
+    // Parse mese
+    const meseDate = new Date(mese);
+    const meseStartUTC = new Date(Date.UTC(meseDate.getFullYear(), meseDate.getMonth(), 1));
+
+    // Verifica che il mese sia terminato
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (meseStartUTC >= currentMonthStart) {
+      return res.status(400).json({ error: 'Non puoi modificare il compenso di un mese non ancora terminato' });
+    }
+
+    // Trova tutor
+    const tutor = await prisma.user.findUnique({
+      where: { id },
+      select: { firstName: true, lastName: true }
+    });
+
+    if (!tutor) {
+      return res.status(404).json({ error: 'Tutor non trovato' });
+    }
+
+    // Calcola il compenso originale del mese
+    const compensoOriginale = await calcolaCompensoMese(prisma, id, meseDate);
+    const differenza = parseFloat(nuovoImporto) - compensoOriginale.totaleArrotondato;
+
+    // Verifica se esiste già un adjustment per questo mese
+    // Cerchiamo un pagamento con status='ADJUSTMENT' per questo mese
+    const existingAdjustment = await prisma.tutorPayment.findFirst({
+      where: {
+        tutorId: id,
+        mese: meseStartUTC,
+        status: 'ADJUSTMENT'
+      }
+    });
+
+    const tutorName = `${tutor.firstName} ${tutor.lastName}`;
+    const meseLabel = meseDate.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+
+    if (existingAdjustment) {
+      // Aggiorna adjustment esistente
+      await prisma.$transaction(async (tx) => {
+        // Aggiorna il pagamento
+        await tx.tutorPayment.update({
+          where: { id: existingAdjustment.id },
+          data: {
+            importo: differenza,
+            note: note || `Modifica compenso ${meseLabel}: da €${compensoOriginale.totaleArrotondato} a €${nuovoImporto}`
+          }
+        });
+
+        // Aggiorna movimento contabile se esiste
+        if (existingAdjustment.movimentoContabileId) {
+          await tx.accountingEntry.update({
+            where: { tutorPaymentId: existingAdjustment.id },
+            data: {
+              importo: Math.abs(differenza),
+              tipo: differenza >= 0 ? 'USCITA' : 'ENTRATA', // Se differenza negativa = riduzione costo = entrata
+              descrizione: `Adjustment Compenso ${meseLabel} - ${tutorName}`
+            }
+          });
+        }
+      });
+
+      res.json({
+        message: `Compenso ${meseLabel} aggiornato a €${nuovoImporto}`,
+        adjustment: 'updated'
+      });
+    } else if (Math.abs(differenza) > 0.01) {
+      // Crea nuovo adjustment solo se c'è differenza
+      const adjustment = await prisma.tutorPayment.create({
+        data: {
+          tutorId: id,
+          mese: meseStartUTC,
+          importo: differenza,
+          dataPagamento: new Date(),
+          metodo: 'ALTRO',
+          status: 'ADJUSTMENT',
+          note: note || `Modifica compenso ${meseLabel}: da €${compensoOriginale.totaleArrotondato} a €${nuovoImporto}`,
+          // Crea movimento contabile solo se differenza significativa
+          movimentoContabile: {
+            create: {
+              tipo: differenza >= 0 ? 'USCITA' : 'ENTRATA',
+              importo: Math.abs(differenza),
+              descrizione: `Adjustment Compenso ${meseLabel} - ${tutorName}`,
+              categoria: 'Adjustment Compenso',
+              data: new Date()
+            }
+          }
+        }
+      });
+
+      res.json({
+        message: `Compenso ${meseLabel} aggiornato a €${nuovoImporto}`,
+        adjustment: 'created',
+        differenza
+      });
+    } else {
+      // Nessuna differenza, rimuovi adjustment se esiste
+      res.json({
+        message: `Nessuna modifica necessaria, importo già €${nuovoImporto}`,
+        adjustment: 'no_change'
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============================================
+// GET DETAILED STATS (Distributions, Top Students, Preferences)
+// ============================================
+
+/**
+ * GET /api/tutors/:id/detailed-stats
+ * Returns: ore distribution by type, top 5 students, preferred days/hours
+ * Query: mesi (default 6), includeCurrent (default true)
+ */
+const getDetailedStats = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { mesi = 6, includeCurrent = 'true' } = req.query;
+
+    const numMesi = parseInt(mesi);
+    const includeCurrentMonth = includeCurrent === 'true';
+    const now = new Date();
+
+    // Calculate date range
+    // If mesi=0, only include current month
+    // Otherwise, go back X months from current or previous month
+    let startDate, endDate;
+
+    if (numMesi === 0) {
+      // Only current month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    } else {
+      // Last X months
+      const startOffset = includeCurrentMonth ? numMesi - 1 : numMesi;
+      const endOffset = includeCurrentMonth ? 0 : 1;
+      startDate = new Date(now.getFullYear(), now.getMonth() - startOffset, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() - endOffset + 1, 0, 23, 59, 59);
+    }
+
+    // Fetch all lessons in period with related data
+    const lezioni = await prisma.lesson.findMany({
+      where: {
+        tutorId: id,
+        data: { gte: startDate, lte: endDate }
+      },
+      include: {
+        lessonStudents: {
+          include: {
+            student: true
+          }
+        },
+        timeSlot: true
+      },
+      orderBy: { data: 'desc' }
+    });
+
+    // 1. DISTRIBUZIONE ORE PER TIPO
+    const distribuzione = {
+      singole: { ore: 0, lezioni: 0 },
+      gruppo: { ore: 0, lezioni: 0 },
+      maxi: { ore: 0, lezioni: 0 }
+    };
+
+    for (const l of lezioni) {
+      const tipo = (l.tipo || 'SINGOLA').toLowerCase();
+      const durata = l.durata || 1;
+
+      if (tipo === 'singola') {
+        distribuzione.singole.ore += durata;
+        distribuzione.singole.lezioni++;
+      } else if (tipo === 'gruppo') {
+        distribuzione.gruppo.ore += durata;
+        distribuzione.gruppo.lezioni++;
+      } else if (tipo === 'maxi') {
+        distribuzione.maxi.ore += durata;
+        distribuzione.maxi.lezioni++;
+      }
+    }
+
+    // Calculate totals and percentages
+    const totalOre = distribuzione.singole.ore + distribuzione.gruppo.ore + distribuzione.maxi.ore;
+    distribuzione.singole.percentuale = totalOre > 0 ? Math.round((distribuzione.singole.ore / totalOre) * 100) : 0;
+    distribuzione.gruppo.percentuale = totalOre > 0 ? Math.round((distribuzione.gruppo.ore / totalOre) * 100) : 0;
+    distribuzione.maxi.percentuale = totalOre > 0 ? Math.round((distribuzione.maxi.ore / totalOre) * 100) : 0;
+
+    // 2. TOP 5 ALUNNI (by hours with this tutor)
+    const studentStats = new Map();
+
+    for (const l of lezioni) {
+      for (const ls of l.lessonStudents) {
+        if (!ls.student) continue;
+
+        const studentId = ls.student.id;
+        if (!studentStats.has(studentId)) {
+          studentStats.set(studentId, {
+            id: studentId,
+            nome: `${ls.student.firstName} ${ls.student.lastName}`,
+            ore: 0,
+            lezioni: 0,
+            ultima: l.data
+          });
+        }
+
+        const stats = studentStats.get(studentId);
+        const durata = ls.mezzaLezione ? 0.5 : (l.durata || 1);
+        stats.ore += durata;
+        stats.lezioni++;
+        if (l.data > stats.ultima) stats.ultima = l.data;
+      }
+    }
+
+    const top5Alunni = Array.from(studentStats.values())
+      .sort((a, b) => b.ore - a.ore)
+      .slice(0, 5)
+      .map(s => ({
+        ...s,
+        ore: Math.round(s.ore * 10) / 10
+      }));
+
+    // 3. GIORNI/ORARI PREFERITI
+    const giorniCount = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+    const orariCount = new Map();
+    const giorniNomi = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+
+    for (const l of lezioni) {
+      const giorno = new Date(l.data).getDay();
+      giorniCount[giorno]++;
+
+      if (l.timeSlot) {
+        const fascia = `${l.timeSlot.oraInizio}-${l.timeSlot.oraFine}`;
+        orariCount.set(fascia, (orariCount.get(fascia) || 0) + 1);
+      }
+    }
+
+    // Sort and get top days
+    const giorniPreferiti = Object.entries(giorniCount)
+      .filter(([_, count]) => count > 0)
+      .map(([giorno, count]) => ({
+        giorno: giorniNomi[parseInt(giorno)],
+        count,
+        percentuale: lezioni.length > 0 ? Math.round((count / lezioni.length) * 100) : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Sort and get top time slots
+    const orariPreferiti = Array.from(orariCount.entries())
+      .map(([fascia, count]) => ({
+        fascia,
+        count,
+        percentuale: lezioni.length > 0 ? Math.round((count / lezioni.length) * 100) : 0
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    res.json({
+      periodo: {
+        da: startDate.toISOString(),
+        a: endDate.toISOString(),
+        mesi: numMesi || 1,
+        totalLezioni: lezioni.length,
+        totalOre: Math.round(totalOre * 10) / 10
+      },
+      distribuzioneOre: distribuzione,
+      top5Alunni,
+      giorniPreferiti,
+      orariPreferiti
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTutors,
   createTutor,
@@ -822,4 +1264,7 @@ module.exports = {
   updatePayment,
   deletePayment,
   checkDuplicateTutor,
+  updateCompensoMensile,
+  getMonthlyPerformance,
+  getDetailedStats,
 };

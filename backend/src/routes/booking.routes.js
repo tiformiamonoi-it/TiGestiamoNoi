@@ -6,6 +6,7 @@ const {
     getPublicMaterie,
     checkDuplicateBooking,
     addCommunication,
+    verifyStudent,
     getBookings,
     updateBookingStatus,
     deleteBooking
@@ -27,6 +28,9 @@ router.post('/public/check-duplicate', checkDuplicateBooking);
 
 // POST /api/bookings/public/communication - Invia solo comunicazione
 router.post('/public/communication', addCommunication);
+
+// POST /api/bookings/public/verify-student - Verifica studente iscritto
+router.post('/public/verify-student', verifyStudent);
 
 // ========================================
 // ROUTES ADMIN (auth required)
