@@ -685,15 +685,15 @@ async function calcolaStatsTutor(tutorId, periodo) {
   let totaleDovuto = 0;
 
   if (firstLesson) {
-    // Genera lista mesi dalla prima lezione fino a fine mese SCORSO (non includiamo mese corrente se incompleto)
+    // Genera lista mesi dalla prima lezione fino al mese corrente (incluso)
     const now = new Date();
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     // Start from first lesson month
     const current = new Date(firstLesson.data.getFullYear(), firstLesson.data.getMonth(), 1);
 
-    // Itera tutti i mesi fino al mese scorso (incluso)
-    while (current < currentMonthStart) {
+    // Itera tutti i mesi fino al mese corrente (incluso)
+    while (current <= currentMonthStart) {
       const meseStart = new Date(current.getFullYear(), current.getMonth(), 1);
 
       // Calcola compenso mese
