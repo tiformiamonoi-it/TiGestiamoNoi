@@ -122,6 +122,29 @@ const createPublicBooking = async (req, res, next) => {
             });
         }
 
+        // Verifica se esiste già una prenotazione per questo telefono+data
+        const normalizedPhone = normalizePhone(studentPhone);
+        const date = new Date(requestedDate);
+        const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+
+        const existingBooking = await prisma.booking.findFirst({
+            where: {
+                requestedDate: {
+                    gte: startOfDay,
+                    lte: endOfDay
+                },
+                status: { not: 'CANCELLED' }
+            }
+        });
+
+        // Controlla se il telefono corrisponde (normalizzato)
+        if (existingBooking && normalizePhone(existingBooking.studentPhone) === normalizedPhone) {
+            return res.status(400).json({
+                error: 'Hai già una prenotazione per questo giorno. Clicca sul giorno nel calendario per modificarla.'
+            });
+        }
+
         // Crea prenotazione
         const booking = await prisma.booking.create({
             data: {
@@ -383,12 +406,147 @@ const deleteBooking = async (req, res, next) => {
     }
 };
 
+/**
+ * POST /api/bookings/public/my-bookings
+ * Ottiene le prenotazioni attive di un utente (per telefono)
+ */
+const getMyBookings = async (req, res, next) => {
+    try {
+        const { studentPhone } = req.body;
+
+        if (!studentPhone) {
+            return res.status(400).json({ error: 'Telefono richiesto' });
+        }
+
+        const normalizedInput = normalizePhone(studentPhone);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Trova tutte le prenotazioni future per questo telefono
+        const allBookings = await prisma.booking.findMany({
+            where: {
+                requestedDate: { gte: today },
+                status: { not: 'CANCELLED' }
+            },
+            orderBy: { requestedDate: 'asc' }
+        });
+
+        // Filtra per telefono normalizzato
+        const userBookings = allBookings.filter(b =>
+            normalizePhone(b.studentPhone) === normalizedInput
+        );
+
+        res.json({
+            bookings: userBookings.map(b => ({
+                id: b.id,
+                requestedDate: b.requestedDate,
+                subjects: b.subjects,
+                status: b.status
+            }))
+        });
+    } catch (error) {
+        console.error('Errore recupero prenotazioni utente:', error);
+        next(error);
+    }
+};
+
+/**
+ * PATCH /api/bookings/public/:id/subjects
+ * Modifica le materie di una prenotazione (o cancella se vuote)
+ */
+const { sendModificationNotification } = require('../services/email.service');
+
+const updateBookingSubjects = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { subjects, studentPhone } = req.body;
+
+        if (!studentPhone) {
+            return res.status(400).json({ error: 'Telefono richiesto per verifica' });
+        }
+
+        // Trova la prenotazione
+        const booking = await prisma.booking.findUnique({
+            where: { id }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ error: 'Prenotazione non trovata' });
+        }
+
+        // Verifica che il telefono corrisponda
+        if (normalizePhone(booking.studentPhone) !== normalizePhone(studentPhone)) {
+            return res.status(403).json({ error: 'Non sei autorizzato a modificare questa prenotazione' });
+        }
+
+        const originalSubjects = booking.subjects || [];
+        const newSubjects = subjects || [];
+        const removedSubjects = originalSubjects.filter(s => !newSubjects.includes(s));
+        const addedSubjects = newSubjects.filter(s => !originalSubjects.includes(s));
+        const isCancelled = newSubjects.length === 0;
+
+        // Costruisci nota di modifica
+        let modificationNote = `[Modifica ${new Date().toLocaleString('it-IT')}]:`;
+        if (addedSubjects.length > 0) {
+            modificationNote += ` Aggiunte: ${addedSubjects.join(', ')}.`;
+        }
+        if (removedSubjects.length > 0) {
+            modificationNote += ` Rimosse: ${removedSubjects.join(', ')}.`;
+        }
+        if (addedSubjects.length === 0 && removedSubjects.length === 0) {
+            modificationNote += ' Nessuna modifica.';
+        }
+
+        // Aggiorna la prenotazione
+        const updatedBooking = await prisma.booking.update({
+            where: { id },
+            data: {
+                subjects: newSubjects,
+                status: isCancelled ? 'CANCELLED' : booking.status,
+                notes: booking.notes
+                    ? `${booking.notes}\n---\n${modificationNote}`
+                    : modificationNote
+            }
+        });
+
+        // Invia email di notifica
+        try {
+            await sendModificationNotification({
+                studentName: booking.studentName,
+                studentSurname: booking.studentSurname,
+                studentPhone: booking.studentPhone,
+                requestedDate: booking.requestedDate,
+                addedSubjects,
+                removedSubjects,
+                remainingSubjects: newSubjects,
+                isCancelled
+            });
+        } catch (emailErr) {
+            console.error('Errore invio email modifica:', emailErr);
+        }
+
+        res.json({
+            message: isCancelled ? 'Prenotazione annullata' : 'Prenotazione modificata',
+            booking: {
+                id: updatedBooking.id,
+                subjects: updatedBooking.subjects,
+                status: updatedBooking.status
+            }
+        });
+    } catch (error) {
+        console.error('Errore modifica prenotazione:', error);
+        next(error);
+    }
+};
+
 module.exports = {
     createPublicBooking,
     getPublicMaterie,
     checkDuplicateBooking,
     addCommunication,
     verifyStudent,
+    getMyBookings,
+    updateBookingSubjects,
     getBookings,
     updateBookingStatus,
     deleteBooking

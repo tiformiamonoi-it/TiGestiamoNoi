@@ -13,7 +13,7 @@ const {
   calcolaNuoviValoriPacchetto,
   ripristinaValoriPacchetto,
 } = require('../utils/lessonCalculations');
-const { updatePackageStates } = require('../utils/packageStates');
+const { updatePackageStates, isPacchettoValidoPerLezioni } = require('../utils/packageStates');
 
 // ============================================
 // GET LEZIONI
@@ -222,12 +222,11 @@ const createLesson = async (req, res, next) => {
       // Aggiungi studenti alla lezione esistente
       const result = await prisma.$transaction(async (tx) => {
         const studentiAggiornati = [];
-        const { isPacchettoClosed } = require('../utils/packageStates');
 
         for (const studentData of studentiNuovi) {
           const { studentId, mezzaLezione = false } = studentData;
 
-          // Trova pacchetto valido
+          // Trova pacchetto valido (ATTIVO, non scaduto)
           const candidatePackages = await tx.package.findMany({
             where: { studentId },
             orderBy: { createdAt: 'asc' },
@@ -235,7 +234,8 @@ const createLesson = async (req, res, next) => {
 
           let pacchetto = null;
           for (const pkg of candidatePackages) {
-            if (!isPacchettoClosed(pkg)) {
+            // ✅ FIX: Usa isPacchettoValidoPerLezioni per selezionare solo pacchetti ATTIVI
+            if (isPacchettoValidoPerLezioni(pkg)) {
               pacchetto = pkg;
               break;
             }
@@ -365,13 +365,12 @@ const createLesson = async (req, res, next) => {
       });
 
       const studentiAggiornati = [];
-      const { isPacchettoClosed } = require('../utils/packageStates');
 
       // Per ogni studente: controlla se ha già lezioni nello stesso giorno
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // Trova pacchetto valido (non chiuso)
+        // Trova pacchetto valido (ATTIVO, non scaduto)
         const candidatePackages = await tx.package.findMany({
           where: { studentId },
           orderBy: { createdAt: 'asc' },
@@ -379,7 +378,8 @@ const createLesson = async (req, res, next) => {
 
         let pacchetto = null;
         for (const pkg of candidatePackages) {
-          if (!isPacchettoClosed(pkg)) {
+          // ✅ FIX: Usa isPacchettoValidoPerLezioni per selezionare solo pacchetti ATTIVI
+          if (isPacchettoValidoPerLezioni(pkg)) {
             pacchetto = pkg;
             break;
           }
@@ -557,7 +557,7 @@ const updateLesson = async (req, res, next) => {
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // ✅ Prendi tutti i pacchetti dello studente e filtra via quelli chiusi
+        // ✅ Prendi tutti i pacchetti dello studente e filtra via quelli non attivi
         const candidatePackages = await tx.package.findMany({
           where: {
             studentId: studentId,
@@ -565,11 +565,11 @@ const updateLesson = async (req, res, next) => {
           orderBy: { createdAt: 'asc' }, // Più vecchio prima
         });
 
-        const { isPacchettoClosed } = require('../utils/packageStates');
         let pacchetto = null;
 
         for (const pkg of candidatePackages) {
-          if (!isPacchettoClosed(pkg)) {
+          // ✅ FIX: Usa isPacchettoValidoPerLezioni per selezionare solo pacchetti ATTIVI
+          if (isPacchettoValidoPerLezioni(pkg)) {
             pacchetto = pkg;
             break;
           }
@@ -999,7 +999,8 @@ const getCalendarDays = async (req, res, next) => {
 /**
  * GET /api/lessons/calendar/alunni-disponibili
  * Ritorna alunni con pacchetti per la selezione lezioni
- * Include anche studenti con pacchetti CHIUSI (saranno non selezionabili nel frontend)
+ * ✅ FIX: Mostra solo pacchetti ATTIVI, non quelli scaduti
+ * Include flag _allPackagesClosed per studenti con tutti pacchetti chiusi
  */
 const getAvailableStudents = async (req, res, next) => {
   try {
@@ -1026,6 +1027,7 @@ const getAvailableStudents = async (req, res, next) => {
             oreResiduo: true,
             giorniResiduo: true,
             stati: true,
+            dataScadenza: true, // ✅ Includi data scadenza per il frontend
           },
         },
       },
@@ -1035,8 +1037,29 @@ const getAvailableStudents = async (req, res, next) => {
       ],
     });
 
-    // Filtra: solo studenti con almeno un pacchetto (anche CHIUSO)
-    const filteredStudents = students.filter(student => student.pacchetti.length > 0);
+    const { isPacchettoClosed } = require('../utils/packageStates');
+
+    // ✅ Filtra pacchetti: mostra solo quelli ATTIVI
+    const filteredStudents = students
+      .filter(student => student.pacchetti.length > 0)
+      .map(student => {
+        // Identifica pacchetti attivi (non scaduti, non esauriti)
+        const pacchettiAttivi = student.pacchetti.filter(pkg =>
+          isPacchettoValidoPerLezioni(pkg)
+        );
+
+        // Check se TUTTI i pacchetti sono chiusi
+        const allPackagesClosed = student.pacchetti.length > 0 &&
+          student.pacchetti.every(pkg => isPacchettoClosed(pkg));
+
+        return {
+          ...student,
+          // ✅ Mostra solo pacchetti attivi
+          pacchetti: pacchettiAttivi,
+          // Flag per il frontend: tutti pacchetti chiusi
+          _allPackagesClosed: allPackagesClosed,
+        };
+      });
 
     console.log(`✅ getAvailableStudents: ${filteredStudents.length} studenti con pacchetti`);
 

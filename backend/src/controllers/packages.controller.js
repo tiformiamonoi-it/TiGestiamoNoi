@@ -47,9 +47,20 @@ const getPackages = async (req, res, next) => {
               note: true,
             },
           },
+          // ✅ FIX: Include lessonStudents per calcolo dinamico giorni
+          lessonStudents: {
+            select: {
+              id: true,
+              lesson: {
+                select: {
+                  data: true,
+                }
+              }
+            }
+          },
           _count: {
             select: {
-              lessonStudents: true,  // ✅ CAMBIATO da lezioni a lessonStudents
+              lessonStudents: true,
               pagamenti: true
             }
           },
@@ -59,20 +70,39 @@ const getPackages = async (req, res, next) => {
       prisma.package.count({ where }),
     ]);
 
-    // ✅ LAZY UPDATE: Aggiorna stati se necessario
-    // Eseguiamo in parallelo per non rallentare troppo
+    // ✅ LAZY UPDATE + CALCOLO DINAMICO GIORNI PER MENSILI
     await Promise.all(packages.map(async (pkg) => {
-      // Ottimizzazione: aggiorna solo se c'è data scadenza e non è già scaduto/chiuso
-      // Oppure, per sicurezza, aggiorniamo sempre (più sicuro, leggermente più lento)
-      // Dato che updatePackageStates fa controlli interni, lo chiamiamo direttamente.
-      // Per evitare troppe write, updatePackageStates dovrebbe controllare se cambia qualcosa?
-      // Al momento updatePackageStates fa sempre una write.
-      // Per ora lo facciamo per tutti i pacchetti visualizzati (pagina corrente).
       try {
         const updatedPkg = await updatePackageStates(pkg.id);
         // Aggiorniamo l'oggetto in memoria per la risposta
         pkg.stati = updatedPkg.stati;
-        pkg.oreResiduo = updatedPkg.oreResiduo; // In caso cambi
+        pkg.oreResiduo = updatedPkg.oreResiduo;
+        pkg.orePerse = updatedPkg.orePerse;
+
+        // ✅ FIX: Calcolo dinamico giorniResiduo per pacchetti MENSILI
+        // (stessa logica di students.controller.js)
+        if (pkg.tipo === 'MENSILE') {
+          const giorniTotali = pkg.giorniAcquistati || 0;
+
+          // Conta giorni UNICI con lezioni
+          const dateUniche = new Set(
+            (pkg.lessonStudents || []).map(ls =>
+              ls.lesson.data.toISOString().split('T')[0]
+            )
+          );
+          const giorniUsati = dateUniche.size;
+
+          // Calcola residuo dinamico
+          pkg.giorniResiduo = Math.max(0, giorniTotali - giorniUsati);
+          pkg.giorniUsati = giorniUsati;
+          pkg.giorniTotali = giorniTotali;
+        } else {
+          pkg.giorniResiduo = updatedPkg.giorniResiduo;
+        }
+
+        // Rimuovi lessonStudents dalla risposta (non serve al frontend)
+        delete pkg.lessonStudents;
+
       } catch (e) {
         console.error(`Errore lazy update pacchetto ${pkg.id}:`, e);
       }

@@ -7,6 +7,8 @@ const {
     checkDuplicateBooking,
     addCommunication,
     verifyStudent,
+    getMyBookings,
+    updateBookingSubjects,
     getBookings,
     updateBookingStatus,
     deleteBooking
@@ -31,6 +33,12 @@ router.post('/public/communication', addCommunication);
 
 // POST /api/bookings/public/verify-student - Verifica studente iscritto
 router.post('/public/verify-student', verifyStudent);
+
+// POST /api/bookings/public/my-bookings - Ottieni prenotazioni utente
+router.post('/public/my-bookings', getMyBookings);
+
+// PATCH /api/bookings/public/:id/subjects - Modifica materie prenotazione
+router.patch('/public/:id/subjects', updateBookingSubjects);
 
 // ========================================
 // ROUTES ADMIN (auth required)

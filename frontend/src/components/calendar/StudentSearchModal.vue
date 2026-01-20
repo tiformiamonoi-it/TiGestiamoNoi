@@ -187,10 +187,17 @@ const toggleStudent = (student) => {
   selectedStudents.value = new Set(selectedStudents.value);
 };
 
-// Verifica se lo studente ha SOLO pacchetti chiusi
+// Verifica se lo studente ha SOLO pacchetti chiusi (o nessun pacchetto attivo)
 const isStudentChiuso = (student) => {
-  if (!student.pacchetti || student.pacchetti.length === 0) return true;
-  // Se TUTTI i pacchetti sono CHIUSI, lo studente è "chiuso"
+  // ✅ Se il backend ha già calcolato questo flag, usalo
+  if (student._allPackagesClosed === true) return true;
+  
+  // Se non ci sono pacchetti attivi (il backend li ha già filtrati), lo studente non è utilizzabile
+  if (!student.pacchetti || student.pacchetti.length === 0) {
+    return true;
+  }
+  
+  // Se TUTTI i pacchetti restituiti sono CHIUSI
   return student.pacchetti.every(pkg => pkg.stati?.includes('CHIUSO'));
 };
 

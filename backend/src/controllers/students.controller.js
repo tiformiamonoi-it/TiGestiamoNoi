@@ -33,11 +33,34 @@ const getStudents = async (req, res, next) => {
       if (active === 'true') {
         // Mostra solo attivi: active=true E almeno un pacchetto
         where.active = true;
-        where.pacchetti = {
-          some: {}
-        };
+
+        // ✅ FIX: Se c'è filtro tipo pacchetto, filtra a livello di query
+        if (pacchetto === 'mensile') {
+          where.pacchetti = {
+            some: { tipo: 'MENSILE' }
+          };
+        } else if (pacchetto === 'orario') {
+          where.pacchetti = {
+            some: { tipo: 'ORE' }
+          };
+        } else {
+          where.pacchetti = {
+            some: {}
+          };
+        }
       } else {
         where.active = false;
+      }
+    } else if (pacchetto) {
+      // ✅ Anche senza filtro active, applica filtro tipo pacchetto
+      if (pacchetto === 'mensile') {
+        where.pacchetti = {
+          some: { tipo: 'MENSILE' }
+        };
+      } else if (pacchetto === 'orario') {
+        where.pacchetti = {
+          some: { tipo: 'ORE' }
+        };
       }
     }
 
@@ -68,11 +91,7 @@ const getStudents = async (req, res, next) => {
         orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
         include: {
           pacchetti: {
-            where: {
-              stati: {
-                hasSome: ['ATTIVO', 'DA_PAGARE', 'DA_RINNOVARE', 'ESAURITO', 'SCADUTO', 'NEGATIVO']
-              },
-            },
+            // ✅ FIX: Rimosso filtro stati - carica TUTTI i pacchetti per filtro tipo corretto
             select: {
               id: true,
               nome: true,
@@ -100,8 +119,8 @@ const getStudents = async (req, res, next) => {
                 },
               },
             },
-            orderBy: { createdAt: 'asc' }, // ✅ PIÙ VECCHIO
-            take: 1,
+            orderBy: { createdAt: 'desc' }, // ✅ PIÙ RECENTE prima
+            // ✅ RIMOSSO take:1 - carica tutti per controllare SCADUTO+DA_PAGARE
           },
           _count: {
             select: {
@@ -115,7 +134,21 @@ const getStudents = async (req, res, next) => {
 
     // Formatta e FILTRA studenti
     let studentsFormatted = students.map((student) => {
-      const pacchettoAttivo = student.pacchetti[0] || null;
+      // ✅ FIX: Se c'è un filtro tipo pacchetto, trova il pacchetto più recente di quel tipo
+      let pacchettoAttivo;
+      if (pacchetto === 'mensile') {
+        pacchettoAttivo = student.pacchetti.find(p => p.tipo === 'MENSILE') || null;
+      } else if (pacchetto === 'orario') {
+        pacchettoAttivo = student.pacchetti.find(p => p.tipo === 'ORE') || null;
+      } else {
+        pacchettoAttivo = student.pacchetti[0] || null;
+      }
+
+      // ✅ Controlla se QUALCHE pacchetto è SCADUTO + DA_PAGARE
+      const hasPacchettoScadutoDaPagare = student.pacchetti.some(pkg => {
+        const stati = pkg.stati || [];
+        return stati.includes('SCADUTO') && stati.includes('DA_PAGARE');
+      });
 
       if (!pacchettoAttivo) {
         return {
@@ -129,14 +162,14 @@ const getStudents = async (req, res, next) => {
           email: student.parentEmail,
           active: student.active,
           createdAt: student.createdAt,
-          totalLessons: student._count.lessonStudents, // ✅ CAMBIATO
+          totalLessons: student._count.lessonStudents,
           pacchettoAttivo: null,
+          hasPacchettoScadutoDaPagare, // ✅ Flag per pallino rosso
         };
       }
 
       // CALCOLA GIORNI USATI
       let giorniUsati = 0;
-      // ✅ CAMBIATO da pacchettoAttivo.lezioni a lessonStudents
       if (pacchettoAttivo.tipo === 'MENSILE' && pacchettoAttivo.lessonStudents) {
         const dateUniche = new Set(
           pacchettoAttivo.lessonStudents.map(ls => ls.lesson.data.toISOString().split('T')[0])
@@ -172,7 +205,8 @@ const getStudents = async (req, res, next) => {
         email: student.parentEmail,
         active: student.active,
         createdAt: student.createdAt,
-        totalLessons: student._count.lessonStudents, // ✅ CAMBIATO
+        totalLessons: student._count.lessonStudents,
+        hasPacchettoScadutoDaPagare, // ✅ Flag per pallino rosso
         pacchettoAttivo: {
           id: pacchettoAttivo.id,
           nome: pacchettoAttivo.nome,
@@ -184,7 +218,7 @@ const getStudents = async (req, res, next) => {
           oreTotali: parseFloat(pacchettoAttivo.oreAcquistate || 0),
           giorniAcquistati: pacchettoAttivo.giorniAcquistati || 0,
           giorniUsati: giorniUsati,
-          giorniResiduo: giorniResiduoCalcolato, // ✅ FIX: Use calculated value
+          giorniResiduo: giorniResiduoCalcolato,
           giorniTotali: giorniTotali,
           importoTotale: parseFloat(pacchettoAttivo.prezzoTotale || 0),
           importoPagato: parseFloat(pacchettoAttivo.importoPagato || 0),
@@ -201,13 +235,9 @@ const getStudents = async (req, res, next) => {
     // ====================================
 
     // Filtro TIPO PACCHETTO (mensile/orario)
+    // ✅ FIX: pacchettoAttivo è già selezionato in base al tipo, esclude solo chi non ha pacchetti del tipo richiesto
     if (pacchetto) {
-      studentsFormatted = studentsFormatted.filter(s => {
-        if (!s.pacchettoAttivo) return false;
-        if (pacchetto === 'mensile') return s.pacchettoAttivo.tipo === 'MENSILE';
-        if (pacchetto === 'orario') return s.pacchettoAttivo.tipo === 'ORE';
-        return true;
-      });
+      studentsFormatted = studentsFormatted.filter(s => s.pacchettoAttivo !== null);
     }
 
     // Filtro ORE NEGATIVE

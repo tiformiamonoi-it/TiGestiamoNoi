@@ -94,6 +94,12 @@
               >
                 {{ state.label }}
               </span>
+              <!-- ✅ Pallina rossa se ci sono pagamenti in sospeso -->
+              <span 
+                v-if="hasPendingPayment(student)" 
+                class="payment-dot"
+                title="Pagamento in sospeso"
+              ></span>
             </div>
           </td>
 
@@ -282,6 +288,10 @@ const getStates = (student) => {
   return states;
 };
 
+// ✅ Pallino rosso se QUALCHE pacchetto è SCADUTO + DA_PAGARE
+const hasPendingPayment = (student) => {
+  return student.hasPacchettoScadutoDaPagare === true;
+};
 
 
 // Infinite scroll observer
@@ -517,6 +527,16 @@ onUnmounted(() => {
 .state-paid {
   background: rgba(94, 114, 228, 0.15);
   color: #5e72e4;
+}
+
+/* ✅ Pallina rossa per pacchetti scaduti e da pagare */
+.payment-dot {
+  width: 10px;
+  height: 10px;
+  background: #f5365c;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 6px;
 }
 
 

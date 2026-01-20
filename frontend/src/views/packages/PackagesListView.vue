@@ -21,18 +21,7 @@
         <div class="stat-icon warning">⏰</div>
         <div class="stat-content">
           <div class="stat-value">{{ stats.daRinnovare }}</div>
-          <div class="stat-label">Da Rinnovare</div>
-        </div>
-      </div>
-      <div 
-        class="stat-card" 
-        :class="{ active: activeFilter === 'SCADUTO' }"
-        @click="setFilter('SCADUTO')"
-      >
-        <div class="stat-icon danger">🔴</div>
-        <div class="stat-content">
-          <div class="stat-value">{{ stats.scaduti }}</div>
-          <div class="stat-label">Scaduti</div>
+          <div class="stat-label">Da Rinnovare/Chiusi</div>
         </div>
       </div>
       <div 
@@ -44,17 +33,6 @@
         <div class="stat-content">
           <div class="stat-value">{{ stats.daPagare }}</div>
           <div class="stat-label">Da Pagare</div>
-        </div>
-      </div>
-      <div 
-        class="stat-card" 
-        :class="{ active: activeFilter === 'CHIUSO' }"
-        @click="setFilter('CHIUSO')"
-      >
-        <div class="stat-icon muted">✅</div>
-        <div class="stat-content">
-          <div class="stat-value">{{ stats.chiusi }}</div>
-          <div class="stat-label">Chiusi</div>
         </div>
       </div>
     </div>
@@ -291,7 +269,6 @@ const renewPackage = ref(null);
 const stats = ref({
   attivi: 0,
   daRinnovare: 0,
-  scaduti: 0,
   daPagare: 0,
   chiusi: 0
 });
@@ -341,15 +318,32 @@ async function loadPackages(reset = false) {
       selectedPackages.value = [];
     }
 
+    // ✅ FIX: Per il filtro "DA_RINNOVARE" speciale, carichiamo tutti e filtriamo localmente
+    // perché deve includere DA_RINNOVARE + (SCADUTO & DA_PAGARE)
+    let statiParam = filterStato.value || activeFilter.value || undefined;
+    if (activeFilter.value === 'DA_RINNOVARE') {
+      // Carichiamo tutti i pacchetti non chiusi e filtriamo localmente
+      statiParam = undefined;
+    }
+
     const params = {
       page: page.value,
       limit: 30,
       tipo: filterTipo.value || undefined,
-      stati: filterStato.value || activeFilter.value || undefined
+      stati: statiParam
     };
 
     const response = await packagesAPI.getAll(params);
-    const newPackages = response.data.packages || [];
+    let newPackages = response.data.packages || [];
+
+    // ✅ FIX: Filtro locale per "Da Rinnovare/Scaduti/Chiusi"
+    if (activeFilter.value === 'DA_RINNOVARE') {
+      newPackages = newPackages.filter(p => 
+        p.stati?.includes('DA_RINNOVARE') || 
+        p.stati?.includes('SCADUTO') ||
+        p.stati?.includes('CHIUSO')
+      );
+    }
 
     // Filter by search locally
     let filteredPackages = newPackages;
@@ -371,8 +365,10 @@ async function loadPackages(reset = false) {
     hasMore.value = newPackages.length === 30;
     page.value++;
 
-    // Calculate stats
-    calculateStats(packages.value);
+    // Calculate stats - ricarica tutti per statistiche accurate
+    if (reset && !activeFilter.value) {
+      calculateStats(packages.value);
+    }
 
   } catch (error) {
     console.error('Errore caricamento pacchetti:', error);
@@ -382,12 +378,15 @@ async function loadPackages(reset = false) {
 }
 
 function calculateStats(pkgs) {
+  // ✅ FIX: "Da Rinnovare" ora include DA_RINNOVARE + SCADUTO + CHIUSO
   stats.value = {
-    attivi: pkgs.filter(p => p.stati?.includes('ATTIVO')).length,
-    daRinnovare: pkgs.filter(p => p.stati?.includes('DA_RINNOVARE')).length,
-    scaduti: pkgs.filter(p => p.stati?.includes('SCADUTO')).length,
+    attivi: pkgs.filter(p => p.stati?.includes('ATTIVO') && !p.stati?.includes('DA_RINNOVARE')).length,
+    daRinnovare: pkgs.filter(p => 
+      p.stati?.includes('DA_RINNOVARE') || 
+      p.stati?.includes('SCADUTO') ||
+      p.stati?.includes('CHIUSO')
+    ).length,
     daPagare: pkgs.filter(p => p.stati?.includes('DA_PAGARE')).length,
-    chiusi: pkgs.filter(p => p.stati?.includes('CHIUSO')).length
   };
 }
 
@@ -486,8 +485,9 @@ function formatCurrency(value) {
 }
 
 function getProgress(pkg) {
+  // ✅ FIX: Usa giorniTotali (calcolato dinamicamente) se disponibile
   const total = pkg.tipo === 'MENSILE' 
-    ? (pkg.giorniAcquistati || 1) 
+    ? (pkg.giorniTotali || pkg.giorniAcquistati || 1) 
     : (pkg.oreAcquistate || 1);
   const residuo = pkg.tipo === 'MENSILE' 
     ? (pkg.giorniResiduo || 0) 
@@ -501,8 +501,9 @@ function getProgressClass(pkg) {
   const residuo = pkg.tipo === 'MENSILE' 
     ? (pkg.giorniResiduo || 0) 
     : (pkg.oreResiduo || 0);
+  // ✅ FIX: Usa giorniTotali (calcolato dinamicamente) se disponibile
   const total = pkg.tipo === 'MENSILE' 
-    ? (pkg.giorniAcquistati || 1) 
+    ? (pkg.giorniTotali || pkg.giorniAcquistati || 1) 
     : (pkg.oreAcquistate || 1);
   
   const perc = (residuo / total) * 100;
@@ -515,7 +516,9 @@ function getProgressClass(pkg) {
 
 function getHoursDisplay(pkg) {
   if (pkg.tipo === 'MENSILE') {
-    return `${pkg.giorniResiduo || 0} / ${pkg.giorniAcquistati || 0} gg`;
+    // ✅ FIX: Usa giorniTotali (calcolato dinamicamente) se disponibile
+    const totale = pkg.giorniTotali || pkg.giorniAcquistati || 0;
+    return `${pkg.giorniResiduo || 0} / ${totale} gg`;
   }
   return `${parseFloat(pkg.oreResiduo || 0).toFixed(1)} / ${parseFloat(pkg.oreAcquistate || 0).toFixed(1)} h`;
 }
@@ -557,7 +560,7 @@ onMounted(() => {
 /* Stats Grid */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }

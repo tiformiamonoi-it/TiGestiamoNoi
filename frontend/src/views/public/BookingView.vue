@@ -71,10 +71,11 @@
                 disabled: day && !isDateSelectable(day),
                 selected: day && isSelectedDate(day),
                 today: day && isToday(day),
-                'late-today': day && isTodayLate(day)
+                'late-today': day && isTodayLate(day),
+                'has-booking': day && hasBookingOnDate(day)
               }]"
               :disabled="!day || !isDateSelectable(day) || checkingDuplicate"
-              @click="selectDate(day)"
+              @click="handleDateClick(day)"
             >
               {{ day?.getDate() || '' }}
             </button>
@@ -95,13 +96,70 @@
         </div>
       </div>
 
-      <!-- Step Comunicazione (se già prenotato o oggi dopo 11:30) -->
-      <div v-if="currentStep === 2 && isDuplicate" class="step step-communication">
-        <div class="duplicate-alert" :class="{ 'late-alert': isLateTodayMode }">
-          <span class="alert-icon">{{ isLateTodayMode ? '⌛' : '📋' }}</span>
-          <h3>{{ isLateTodayMode ? 'Sono passate le 11:30' : 'Hai già una prenotazione!' }}</h3>
-          <p v-if="isLateTodayMode">Per oggi puoi solo inviare una comunicazione.</p>
-          <p v-else>Materie: <strong>{{ existingBooking?.subjects?.join(', ') || '-' }}</strong></p>
+      <!-- Step Modifica Prenotazione Esistente (quando ha una prenotazione e può modificare) -->
+      <div v-if="currentStep === 2 && isDuplicate && !isLateTodayMode" class="step step-edit-booking">
+        <div class="edit-booking-header">
+          <span class="alert-icon">📝</span>
+          <h3>Hai già una prenotazione per il {{ formatSelectedDate }}</h3>
+        </div>
+        
+        <p class="hint">Le tue materie prenotate:</p>
+        
+        <div class="editable-subjects">
+          <div 
+            v-for="subject in editableSubjects" 
+            :key="subject" 
+            class="editable-subject"
+          >
+            <span>{{ subject }}</span>
+            <button class="remove-btn" @click="removeSubjectFromEdit(subject)" :disabled="savingChanges">
+              🗑️
+            </button>
+          </div>
+          <div v-if="editableSubjects.length === 0" class="no-subjects">
+            ⚠️ Tutte le materie rimosse - la prenotazione verrà annullata
+          </div>
+        </div>
+
+        <!-- Aggiungi altre materie -->
+        <div class="add-subjects-section">
+          <p class="hint">➕ Aggiungi altre materie:</p>
+          <div class="available-subjects-grid">
+            <button
+              v-for="materia in availableSubjectsToAdd"
+              :key="materia"
+              class="subject-add-btn"
+              @click="addSubjectToEdit(materia)"
+              :disabled="savingChanges"
+            >
+              {{ materia }}
+            </button>
+          </div>
+          <p v-if="availableSubjectsToAdd.length === 0" class="all-added-msg">
+            ✅ Hai già aggiunto tutte le materie disponibili
+          </p>
+        </div>
+        
+        <div class="edit-actions">
+          <button class="btn-secondary" @click="cancelEditAndGoBack" :disabled="savingChanges">
+            ← Scegli altro giorno
+          </button>
+          <button 
+            class="btn-primary" 
+            @click="saveBookingChanges" 
+            :disabled="savingChanges"
+          >
+            {{ savingChanges ? 'Salvataggio...' : (editableSubjects.length === 0 ? '🗑️ Conferma Annullamento' : '✅ Salva Modifiche') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step Comunicazione Tardiva - SOLO quando è oggi dopo le 11:00 -->
+      <div v-if="currentStep === 2 && isLateTodayMode" class="step step-communication">
+        <div class="duplicate-alert late-alert">
+          <span class="alert-icon">⌛</span>
+          <h3>Sono passate le 11:00</h3>
+          <p>Per prenotazioni in giornata, puoi solo inviare una comunicazione.</p>
         </div>
 
         <p class="hint">Scrivi la tua comunicazione qui sotto:</p>
@@ -184,9 +242,9 @@
       </button>
       <div v-else></div>
       
-      <!-- Bottone Comunicazione (se duplicato) -->
+      <!-- Bottone Comunicazione (solo se oggi dopo le 11:00) -->
       <button 
-        v-if="currentStep === 2 && isDuplicate" 
+        v-if="currentStep === 2 && isLateTodayMode" 
         class="btn-primary btn-communicate" 
         @click="submitCommunication"
         :disabled="submitting || !form.notes"
@@ -194,9 +252,9 @@
         {{ submitting ? 'Invio...' : '📨 Invia Comunicazione' }}
       </button>
       
-      <!-- Bottone Avanti normale -->
+      <!-- Bottone Avanti normale (nascondi in modalità modifica - le materie si gestiscono nel pannello) -->
       <button 
-        v-else-if="currentStep < 4" 
+        v-else-if="currentStep < 4 && !(currentStep === 2 && isDuplicate && !isLateTodayMode)" 
         class="btn-primary" 
         @click="nextStep"
         :disabled="!canProceed || checkingDuplicate || verifyingStudent"
@@ -232,6 +290,12 @@ const existingBooking = ref(null);
 const checkingDuplicate = ref(false);
 const verifyingStudent = ref(false);
 const verifyError = ref('');
+
+// Prenotazioni esistenti dell'utente
+const userBookings = ref([]);
+const editingBooking = ref(null);
+const editableSubjects = ref([]);
+const savingChanges = ref(false);
 
 const form = ref({
   studentName: '',
@@ -301,10 +365,31 @@ const filteredMaterie = computed(() => {
   return materie.value.filter(m => m.toLowerCase().includes(search));
 });
 
-// Check if we're in late-today mode (forced communication)
+// Check if we're in late-today mode (today after 11:00 - only for NEW bookings today)
 const isLateTodayMode = computed(() => {
   if (!form.value.requestedDate) return false;
-  return isTodayLate(form.value.requestedDate) && isDuplicate.value;
+  // Late mode solo per OGGI dopo le 11:00
+  const date = form.value.requestedDate;
+  const today = new Date();
+  if (date.toDateString() !== today.toDateString()) return false;
+  return !isTodayBookingAllowed();
+});
+
+// Check if booking can still be modified (until 11:00 on the booking day)
+const canEditBooking = computed(() => {
+  if (!form.value.requestedDate || !editingBooking.value) return false;
+  
+  const bookingDate = form.value.requestedDate;
+  const today = new Date();
+  
+  // Se la prenotazione è per un giorno futuro: sempre modificabile
+  if (bookingDate.toDateString() !== today.toDateString()) {
+    return true;
+  }
+  
+  // Se la prenotazione è per oggi: modificabile solo prima delle 11:00
+  const cutoffHour = 11;
+  return today.getHours() < cutoffHour;
 });
 
 const canProceed = computed(() => {
@@ -320,12 +405,11 @@ const canProceed = computed(() => {
   }
 });
 
-// Check if same-day booking is allowed (before 11:30)
+// Check if same-day booking is allowed (before 11:00)
 function isTodayBookingAllowed() {
   const now = new Date();
   const cutoffHour = 11;
-  const cutoffMinute = 30;
-  return now.getHours() < cutoffHour || (now.getHours() === cutoffHour && now.getMinutes() < cutoffMinute);
+  return now.getHours() < cutoffHour;
 }
 
 // Methods
@@ -371,6 +455,8 @@ async function selectDate(date) {
   form.value.requestedDate = date;
   isDuplicate.value = false;
   existingBooking.value = null;
+  editingBooking.value = null;
+  editableSubjects.value = [];
   
   // Force communication mode if today after 11:30
   const isLateToday = isTodayLate(date);
@@ -380,25 +466,14 @@ async function selectDate(date) {
     return;
   }
   
-  // Check for duplicate if we have surname and phone
-  if (form.value.studentSurname && form.value.studentPhone) {
-    checkingDuplicate.value = true;
-    try {
-      const response = await bookingAPI.checkDuplicate({
-        studentSurname: form.value.studentSurname,
-        studentPhone: form.value.studentPhone,
-        requestedDate: date.toISOString()
-      });
-      
-      if (response.data.isDuplicate) {
-        isDuplicate.value = true;
-        existingBooking.value = response.data.existingBooking;
-      }
-    } catch (error) {
-      console.error('Errore check duplicato:', error);
-    } finally {
-      checkingDuplicate.value = false;
-    }
+  // Check for existing booking in userBookings (loaded after verification)
+  const existingInUserBookings = getBookingForDate(date);
+  if (existingInUserBookings) {
+    isDuplicate.value = true;
+    existingBooking.value = existingInUserBookings;
+    editingBooking.value = existingInUserBookings;
+    editableSubjects.value = [...existingInUserBookings.subjects];
+    return;
   }
 }
 
@@ -435,7 +510,14 @@ async function nextStep() {
       });
       
       if (response.data.authorized) {
-        // Verifica OK - procedi
+        // Verifica OK - carica prenotazioni esistenti
+        try {
+          const bookingsRes = await bookingAPI.getMyBookings(form.value.studentPhone);
+          userBookings.value = bookingsRes.data.bookings || [];
+        } catch (e) {
+          console.error('Errore caricamento prenotazioni:', e);
+          userBookings.value = [];
+        }
         currentStep.value++;
       } else {
         // Verifica fallita - mostra errore
@@ -451,6 +533,93 @@ async function nextStep() {
     // Altri step: procedi normalmente
     currentStep.value++;
   }
+}
+
+// Controlla se c'è una prenotazione in una data
+function hasBookingOnDate(date) {
+  if (!date) return false;
+  return userBookings.value.some(b => {
+    const bookingDate = new Date(b.requestedDate);
+    return bookingDate.toDateString() === date.toDateString();
+  });
+}
+
+// Ottieni la prenotazione per una data
+function getBookingForDate(date) {
+  if (!date) return null;
+  return userBookings.value.find(b => {
+    const bookingDate = new Date(b.requestedDate);
+    return bookingDate.toDateString() === date.toDateString();
+  });
+}
+
+// Modifica funzione selectDate per gestire prenotazioni esistenti
+async function handleDateClick(date) {
+  if (!isDateSelectable(date)) return;
+  await selectDate(date);
+}
+
+// Annulla modifica e torna a selezionare un altro giorno
+function cancelEditAndGoBack() {
+  editingBooking.value = null;
+  editableSubjects.value = [];
+  existingBooking.value = null;
+  isDuplicate.value = false;
+  form.value.requestedDate = null;
+}
+
+// Rimuovi materia dalla lista modificabile
+function removeSubjectFromEdit(subject) {
+  editableSubjects.value = editableSubjects.value.filter(s => s !== subject);
+}
+
+// Aggiungi materia alla lista modificabile
+function addSubjectToEdit(subject) {
+  if (!editableSubjects.value.includes(subject)) {
+    editableSubjects.value.push(subject);
+  }
+}
+
+// Materie disponibili da aggiungere (escluse quelle già selezionate)
+const availableSubjectsToAdd = computed(() => {
+  return materie.value.filter(m => !editableSubjects.value.includes(m));
+});
+
+// Salva modifiche prenotazione
+async function saveBookingChanges() {
+  if (!editingBooking.value) return;
+  
+  savingChanges.value = true;
+  try {
+    await bookingAPI.updateSubjects(
+      editingBooking.value.id,
+      editableSubjects.value,
+      form.value.studentPhone
+    );
+    
+    // Aggiorna lista prenotazioni
+    const bookingsRes = await bookingAPI.getMyBookings(form.value.studentPhone);
+    userBookings.value = bookingsRes.data.bookings || [];
+    
+    // Mostra messaggio di successo
+    const wasCancelled = editableSubjects.value.length === 0;
+    alert(wasCancelled ? '✅ Prenotazione annullata!' : '✅ Modifiche salvate!');
+    
+    // Reset completo e torna allo step 1
+    resetForm();
+  } catch (error) {
+    console.error('Errore salvataggio:', error);
+    alert(error.response?.data?.error || 'Errore durante il salvataggio');
+  } finally {
+    savingChanges.value = false;
+  }
+}
+
+// Annulla modifica (chiudi pannello)
+function cancelEdit() {
+  editingBooking.value = null;
+  editableSubjects.value = [];
+  form.value.requestedDate = null;
 }
 
 function prevStep() {
@@ -514,6 +683,9 @@ function resetForm() {
   submitted.value = false;
   isDuplicate.value = false;
   existingBooking.value = null;
+  editingBooking.value = null;
+  editableSubjects.value = [];
+  userBookings.value = [];
   form.value = {
     studentName: '',
     studentSurname: '',
@@ -1068,6 +1240,160 @@ onMounted(() => {
   margin-top: 16px;
   color: #6366f1;
   font-size: 14px;
+  text-align: center;
+}
+
+/* Calendar - Has existing booking (light pastel blue) */
+.day-btn.has-booking {
+  background: rgba(147, 197, 253, 0.4);
+  border: 2px solid #93c5fd;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.day-btn.has-booking:hover:not(:disabled) {
+  background: rgba(147, 197, 253, 0.6);
+}
+
+/* Edit Booking Panel */
+.edit-booking-panel {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(99, 102, 241, 0.1));
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.edit-booking-panel h3 {
+  margin: 0 0 8px;
+  color: #1e40af;
+  font-size: 18px;
+}
+
+.editable-subjects {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.editable-subject {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.editable-subject span {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.remove-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.remove-btn:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.remove-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.no-subjects {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #dc2626;
+  font-size: 14px;
+  text-align: center;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* Edit Booking Header */
+.edit-booking-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(99, 102, 241, 0.15));
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.edit-booking-header .alert-icon {
+  font-size: 28px;
+}
+
+.edit-booking-header h3 {
+  margin: 0;
+  color: #1e40af;
+  font-size: 16px;
+}
+
+.step-edit-booking {
+  /* Inherits from .step */
+}
+
+/* Add Subjects Section */
+.add-subjects-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.available-subjects-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.subject-add-btn {
+  padding: 8px 14px;
+  border: 2px solid #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: 20px;
+  color: #16a34a;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.subject-add-btn:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.2);
+  transform: scale(1.02);
+}
+
+.subject-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.all-added-msg {
+  color: #16a34a;
+  font-size: 13px;
+  margin-top: 12px;
   text-align: center;
 }
 </style>

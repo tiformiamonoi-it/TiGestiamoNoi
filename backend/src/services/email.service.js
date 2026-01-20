@@ -163,8 +163,80 @@ async function sendCommunicationNotification(data) {
   }
 }
 
+/**
+ * Invia email per modifica/cancellazione prenotazione
+ */
+async function sendModificationNotification(data) {
+  const { studentName, studentSurname, studentPhone, requestedDate, addedSubjects, removedSubjects, remainingSubjects, isCancelled } = data;
+
+  const formattedDate = new Date(requestedDate).toLocaleDateString('it-IT', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const subject = isCancelled
+    ? `❌ Prenotazione Annullata - ${studentName} ${studentSurname}`
+    : `✏️ Prenotazione Modificata - ${studentName} ${studentSurname}`;
+
+  const mailOptions = {
+    from: `"Ti Formiamo Noi" <${process.env.SMTP_USER}>`,
+    to: process.env.ADMIN_EMAIL || 'info@tiformiamonoi.it',
+    subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: ${isCancelled ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #f59e0b, #d97706)'}; padding: 20px; border-radius: 10px 10px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">${isCancelled ? '❌ Prenotazione Annullata' : '✏️ Prenotazione Modificata'}</h1>
+        </div>
+        <div style="background: #f8fafc; padding: 20px; border-radius: 0 0 10px 10px;">
+          <p><strong>👤 Studente:</strong> ${studentName} ${studentSurname}</p>
+          <p><strong>📱 Telefono:</strong> <a href="tel:${studentPhone}">${studentPhone}</a></p>
+          <p><strong>📅 Giorno:</strong> ${formattedDate}</p>
+          
+          ${addedSubjects?.length ? `
+          <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 15px; margin: 15px 0;">
+            <p style="margin: 0; color: #059669;"><strong>➕ Materie aggiunte:</strong></p>
+            <p style="margin: 10px 0 0 0; color: #047857;">${addedSubjects.join(', ')}</p>
+          </div>
+          ` : ''}
+          
+          ${removedSubjects?.length ? `
+          <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 15px 0;">
+            <p style="margin: 0; color: #dc2626;"><strong>🗑️ Materie rimosse:</strong></p>
+            <p style="margin: 10px 0 0 0; color: #b91c1c;">${removedSubjects.join(', ')}</p>
+          </div>
+          ` : ''}
+          
+          ${remainingSubjects?.length ? `
+          <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 15px; margin: 15px 0;">
+            <p style="margin: 0; color: #16a34a;"><strong>✅ Materie confermate:</strong></p>
+            <p style="margin: 10px 0 0 0; color: #15803d;">${remainingSubjects.join(', ')}</p>
+          </div>
+          ` : ''}
+          
+          <p style="color: #64748b; font-size: 12px; margin-top: 20px;">
+            Modifica ricevuta: ${new Date().toLocaleString('it-IT')}
+          </p>
+        </div>
+      </div>
+    `
+  };
+
+  try {
+    console.log('📧 Invio notifica modifica a:', process.env.ADMIN_EMAIL);
+    const info = await transporter.sendMail(mailOptions);
+    console.log('📧 Email modifica inviata:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('❌ Errore invio email:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   verifyConnection,
   sendBookingNotification,
-  sendCommunicationNotification
+  sendCommunicationNotification,
+  sendModificationNotification
 };

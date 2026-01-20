@@ -295,6 +295,12 @@ export const bookingAPI = {
   // Verifica studente iscritto (pubblico)
   verifyStudent: (data) => api.post('/bookings/public/verify-student', data),
 
+  // Ottieni le mie prenotazioni (pubblico)
+  getMyBookings: (studentPhone) => api.post('/bookings/public/my-bookings', { studentPhone }),
+
+  // Modifica materie prenotazione (pubblico)
+  updateSubjects: (id, subjects, studentPhone) => api.patch(`/bookings/public/${id}/subjects`, { subjects, studentPhone }),
+
   // Admin: lista prenotazioni
   getAll: (params) => api.get('/bookings', { params }),
 

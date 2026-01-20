@@ -283,6 +283,50 @@ async function refreshAllPackageStates() {
 }
 
 
+/**
+ * Verifica se un pacchetto è valido per assegnare lezioni
+ * Un pacchetto è valido solo se è ATTIVO (non scaduto, non esaurito)
+ * Questa funzione è più restrittiva di isPacchettoClosed perché
+ * esclude anche i pacchetti SCADUTI ma non ancora pagati
+ * @param {Object} pkg - Pacchetto
+ * @returns {boolean} - true se il pacchetto è ATTIVO e utilizzabile
+ */
+function isPacchettoValidoPerLezioni(pkg) {
+  if (!pkg) return false;
+
+  // Se abbiamo già gli stati calcolati, usa quelli
+  if (Array.isArray(pkg.stati)) {
+    // Deve essere ATTIVO e NON SCADUTO/ESAURITO/NEGATIVO
+    const isAttivo = pkg.stati.includes('ATTIVO');
+    const isScaduto = pkg.stati.includes('SCADUTO');
+    const isEsaurito = pkg.stati.includes('ESAURITO');
+    const isNegativo = pkg.stati.includes('NEGATIVO');
+
+    return isAttivo && !isScaduto && !isEsaurito && !isNegativo;
+  }
+
+  // Fallback: calcola manualmente
+  const oggi = new Date();
+  oggi.setHours(0, 0, 0, 0);
+
+  // Check expiration
+  if (pkg.dataScadenza) {
+    const dataScadenza = new Date(pkg.dataScadenza);
+    dataScadenza.setHours(0, 0, 0, 0);
+    if (dataScadenza < oggi) return false; // SCADUTO
+  }
+
+  // Check residual
+  const tipo = pkg.tipo;
+  const residuo = tipo === 'MENSILE'
+    ? parseInt(pkg.giorniResiduo || 0)
+    : parseFloat(pkg.oreResiduo || 0);
+
+  if (residuo <= 0) return false; // ESAURITO o NEGATIVO
+
+  return true; // ATTIVO
+}
+
 module.exports = {
   calculatePackageStates,
   getDisplayStates,
@@ -291,4 +335,5 @@ module.exports = {
   refreshAllPackageStates,
   isPacchettoClosed,
   isPacchettoAttivo,
+  isPacchettoValidoPerLezioni,
 };
