@@ -17,7 +17,7 @@ const {
   getAvailableStudents,
   checkTutorSlotDuplicate,
 } = require('../controllers/lessons.controller');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 // Tutte le route protette
 router.use(authenticateToken);
@@ -69,7 +69,15 @@ router.post(
   [
     body('tutorId').notEmpty().withMessage('tutorId obbligatorio'),
     body('timeSlotId').notEmpty().withMessage('timeSlotId obbligatorio'),
-    body('data').isISO8601().withMessage('Data non valida'),
+    body('data').isISO8601().withMessage('Data non valida').custom((value) => {
+      const inputDate = new Date(value);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (inputDate > today) {
+        throw new Error('Non è possibile inserire lezioni in date future');
+      }
+      return true;
+    }),
     body('studenti').isArray({ min: 1 }).withMessage('Almeno uno studente richiesto'),
     body('studenti.*.studentId').notEmpty().withMessage('studentId obbligatorio'),
   ],
@@ -93,7 +101,7 @@ router.put(
  * ✅ Elimina tutte le lezioni di un tutor in una data
  * ⚠️ DEVE STARE PRIMA DI DELETE /:id
  */
-router.delete('/bulk/by-tutor-date', deleteLessonsByTutorAndDate);
+router.delete('/bulk/by-tutor-date', requireRole(['ADMIN']), deleteLessonsByTutorAndDate);
 
 /**
  * DELETE /api/lessons/:id

@@ -211,6 +211,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { packagesAPI, standardPackagesAPI } from '@/services/api';
 
 // ========================================
@@ -230,6 +231,7 @@ const emit = defineEmits(['close', 'updated']);
 // STATE
 // ========================================
 
+const toast = useToast();
 const submitting = ref(false);
 const standardPackages = ref([]);
 const selectedStandardPackage = ref(null);
@@ -303,7 +305,7 @@ const loadStandardPackages = async () => {
     standardPackages.value = response.data.packages || response.data || [];
   } catch (error) {
     console.error('Errore caricamento pacchetti standard:', error);
-    alert('Impossibile caricare i pacchetti standard.');
+    toast.error('Impossibile caricare i pacchetti standard.');
   }
 };
 
@@ -363,7 +365,7 @@ const initForm = () => {
 const submitUpdate = async () => {
   // ✅ NUOVO: Verifica se pacchetto è chiuso
   if (isPacchettoClosed.value) {
-    alert('❌ Impossibile modificare un pacchetto chiuso (pagato e senza ore disponibili)');
+    toast.error('Impossibile modificare un pacchetto chiuso (pagato e senza ore disponibili)');
     return;
   }
 
@@ -372,7 +374,7 @@ const submitUpdate = async () => {
     const selectedStdPkg = standardPackages.value.find(p => p.id === form.value.standardPackageId);
     
     if (!selectedStdPkg) {
-      alert('Seleziona un pacchetto standard valido');
+      toast.warning('Seleziona un pacchetto standard valido');
       submitting.value = false;
       return;
     }
@@ -396,12 +398,12 @@ const submitUpdate = async () => {
 
     await packagesAPI.update(props.packageData.id, updateData);
 
-    alert('✅ Pacchetto aggiornato con successo!');
+    toast.success('Pacchetto aggiornato con successo!');
     emit('updated');
     emit('close');
   } catch (error) {
     console.error('Errore aggiornamento pacchetto:', error);
-    alert('❌ Errore durante l\'aggiornamento del pacchetto. Riprova.');
+    toast.error('Errore durante l\'aggiornamento del pacchetto. Riprova.');
   } finally {
     submitting.value = false;
   }

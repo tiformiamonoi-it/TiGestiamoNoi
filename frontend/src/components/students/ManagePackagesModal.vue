@@ -176,6 +176,7 @@
                             <span class="payment-label">{{ getPaymentTypeLabel(pag.tipoPagamento) }}</span>
                             <span class="payment-amount">{{ formatCurrency(pag.importo) }}</span>
                             <span class="payment-method">{{ getPaymentMethodLabel(pag.metodoPagamento) }}</span>
+                            <span class="payment-date-small">{{ formatDate(pag.dataPagamento) }}</span>
                             <span v-if="pag.richiedeFattura" class="invoice-icon" title="Richiede fattura">📄</span>
                             
                             <!-- ✅ NUOVO: Pulsante Elimina -->
@@ -547,6 +548,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { packagesAPI, paymentsAPI, standardPackagesAPI } from '@/services/api';
 import EditPackageModal from './EditPackageModal.vue';
 
@@ -571,6 +573,7 @@ const submittingRenewal = ref(false);
 const showEditModal = ref(false);
 const packageToEdit = ref(null);
 const standardPackages = ref([]);
+const toast = useToast();
 // Form Pagamento
 const paymentForm = ref({
   packageId: '',
@@ -774,7 +777,7 @@ const getStateLabelFormatted = (stato) => {
     'ATTIVO': 'Attivo',
     'SCADUTO': 'Scaduto',
     'ESAURITO': 'Esaurito',
-    'ORE_NEGATIVE': 'Ore Negative',
+
     'IN_SCADENZA': 'In Scadenza',
     'DA_RINNOVARE': 'Da Rinnovare',
     'PAGATO': 'Pagato',
@@ -875,7 +878,7 @@ const loadPackages = async () => {
     packages.value = response.data.packages || [];
   } catch (error) {
     console.error('Errore caricamento pacchetti:', error);
-    alert('Errore durante il caricamento dei pacchetti');
+    toast.error('Errore durante il caricamento dei pacchetti');
   } finally {
     loadingPackages.value = false;
   }
@@ -908,16 +911,16 @@ const confirmDeletePayment = async (paymentId) => {
 
   try {
     await paymentsAPI.delete(paymentId);
-    alert('Pagamento eliminato con successo!');
+    toast.success('Pagamento eliminato con successo!');
     await loadPackages(); // Ricarica pacchetti
   } catch (error) {
     console.error('Errore eliminazione pagamento:', error);
     
     // Mostra errore specifico se è un acconto con saldo
     if (error.response?.status === 400) {
-      alert(error.response.data.error || 'Errore durante l\'eliminazione del pagamento');
+      toast.error(error.response.data.error || 'Errore durante l\'eliminazione del pagamento');
     } else {
-      alert('Errore durante l\'eliminazione del pagamento');
+      toast.error('Errore durante l\'eliminazione del pagamento');
     }
   }
 };
@@ -979,12 +982,12 @@ const submitPayment = async () => {
       note: paymentForm.value.note,
     });
 
-    alert('Pagamento registrato con successo!');
+    toast.success('Pagamento registrato con successo!');
     emit('refresh');
     emit('close');
   } catch (error) {
     console.error('Errore registrazione pagamento:', error);
-    alert('Errore durante il salvataggio del pagamento');
+    toast.error('Errore durante il salvataggio del pagamento');
   } finally {
     submitting.value = false;
   }
@@ -1019,13 +1022,13 @@ const submitRenewal = async () => {
 
     await packagesAPI.create(payload);
     
-    alert('Nuovo pacchetto creato con successo!');
+    toast.success('Nuovo pacchetto creato con successo!');
     await loadPackages();
     activeTab.value = 'storico';
     resetRenewalForm();
   } catch (error) {
     console.error('Errore creazione pacchetto:', error);
-    alert('Errore durante la creazione del pacchetto');
+    toast.error('Errore durante la creazione del pacchetto');
   } finally {
     submittingRenewal.value = false;
   }
@@ -1033,12 +1036,12 @@ const submitRenewal = async () => {
 
 const viewLessons = (pkg) => {
   console.log('Vedi lezioni pacchetto:', pkg.id);
-  alert(`Funzionalità "Vedi Lezioni" per pacchetto ${pkg.nome} - Da implementare`);
+  toast.info(`Funzionalità "Vedi Lezioni" per pacchetto ${pkg.nome} - Da implementare`);
 };
 
 const downloadInvoice = (pkg) => {
   console.log('Scarica fattura per pacchetto:', pkg.id);
-  alert(`Download fattura per "${pkg.nome}" - Da implementare`);
+  toast.info(`Download fattura per "${pkg.nome}" - Da implementare`);
 };
 
 /**
@@ -1046,7 +1049,7 @@ const downloadInvoice = (pkg) => {
  */
 const editPackage = (pkg) => {
   if (isSaldato(pkg)) {
-    alert('⚠️ Il pacchetto è saldato e non può essere modificato.');
+    toast.warning('⚠️ Il pacchetto è saldato e non può essere modificato.');
     return;
   }
   packageToEdit.value = pkg;
@@ -1080,7 +1083,7 @@ const confirmDelete = async (pkg) => {
     );
     
     if (secondConfirm !== 'ELIMINA') {
-      alert('Eliminazione annullata');
+      toast.info('Eliminazione annullata');
       return;
     }
   }
@@ -1090,20 +1093,20 @@ const confirmDelete = async (pkg) => {
     
     if (response.data?.deleted) {
       const { lessonsDeleted, paymentsDeleted } = response.data.deleted;
-      alert(
-        `✅ Pacchetto eliminato con successo!\n\n` +
-        `Lezioni eliminate: ${lessonsDeleted}\n` +
-        `Pagamenti eliminati: ${paymentsDeleted}`
+      toast.success(
+        `Pacchetto eliminato con successo!\n\n` +
+        `Lezioni: ${lessonsDeleted}\n` +
+        `Pagamenti: ${paymentsDeleted}`
       );
     } else {
-      alert('Pacchetto eliminato con successo!');
+      toast.success('Pacchetto eliminato con successo!');
     }
     
     emit('refresh');
     loadPackages();
   } catch (error) {
     console.error('Errore eliminazione pacchetto:', error);
-    alert('❌ Errore durante l\'eliminazione del pacchetto. Riprova.');
+    toast.error('Errore durante l\'eliminazione del pacchetto. Riprova.');
   }
 };
 
@@ -2104,6 +2107,13 @@ onMounted(async () => {
 
 .btn-delete-payment:hover {
   opacity: 1;
+}
+
+.payment-date-small {
+  font-size: 11px;
+  color: #8392ab;
+  margin-left: auto;
+  padding-right: 8px;
 }
 
 .btn-delete-payment svg {

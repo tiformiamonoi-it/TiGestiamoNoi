@@ -119,6 +119,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { availabilityAPI } from '@/services/api';
 
 // State
@@ -131,6 +132,7 @@ const savedCount = ref(0); // Contatore per messaggio successo
 const checking = ref(false);
 const saving = ref(false);
 const error = ref('');
+const toast = useToast();
 
 // Calendar state
 const currentMonth = ref(new Date());
@@ -299,7 +301,7 @@ async function saveAvailability() {
     saved.value = true;
   } catch (err) {
     console.error('Errore salvataggio:', err);
-    alert('Errore durante il salvataggio. Riprova.');
+    toast.error('Errore durante il salvataggio. Riprova.');
   } finally {
     saving.value = false;
   }

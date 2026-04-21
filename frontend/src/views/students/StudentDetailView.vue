@@ -403,7 +403,7 @@
                 <span class="payment-label">{{ getPaymentTypeLabel(pag.tipoPagamento) }}</span>
                 <span class="payment-amount">€{{ formatCurrency(pag.importo) }}</span>
                 <span class="payment-method">{{ getPaymentMethodLabel(pag.metodoPagamento) }}</span>
-                <span class="payment-date">{{ formatDate(pag.dataPagamento) }}</span>
+                <span class="payment-date-small">{{ formatDate(pag.dataPagamento) }}</span>
                 <span v-if="pag.richiedeFattura" class="invoice-icon" title="Richiede fattura">📄</span>
                 
                 <!-- Bottone Elimina -->
@@ -519,6 +519,12 @@
                 @click="storicoTab = 'lezioni'"
               >
                 📚 Storico Lezioni
+              </button>
+              <button
+                :class="['storico-tab-btn', { active: storicoTab === 'prenotazioni' }]"
+                @click="storicoTab = 'prenotazioni'"
+              >
+                📅 Storico Prenotazioni
               </button>
             </div>
 
@@ -673,6 +679,53 @@
                 </button>
               </div>
             </div>
+
+            <!-- Sub-Tab: Storico Prenotazioni -->
+            <div v-if="storicoTab === 'prenotazioni'" class="storico-content">
+              <div v-if="loadingBookings" class="loading-state">
+                <div class="spinner"></div>
+                <p>Caricamento prenotazioni...</p>
+              </div>
+              <div v-else-if="bookingHistory.length === 0" class="empty-state">
+                <div class="empty-icon">📅</div>
+                <p>Nessuna prenotazione trovata per questo studente</p>
+              </div>
+              <div v-else class="bookings-list-storico">
+                <div v-for="booking in bookingHistory" :key="booking.id" class="booking-card-storico">
+                  <div class="booking-card-header">
+                    <div class="booking-date-info">
+                      <span class="booking-date">{{ formatDate(booking.requestedDate) }}</span>
+                      <span :class="['booking-status-badge', 'status-' + booking.status.toLowerCase()]">
+                        {{ booking.status }}
+                      </span>
+                    </div>
+                    <span class="booking-creation-date">Inviata il: {{ formatDate(booking.createdAt) }}</span>
+                  </div>
+                  
+                  <div class="booking-card-body">
+                    <div class="booking-subjects-section">
+                      <span class="label">Materie:</span>
+                      <div class="booking-subjects-tags">
+                        <span v-for="m in booking.subjects" :key="m.id" class="subject-tag">{{ m.name }}</span>
+                      </div>
+                    </div>
+                    
+                    <div v-if="booking.notes" class="booking-notes-section">
+                      <span class="label">Note / Comunicazioni:</span>
+                      <p class="notes-content">{{ booking.notes }}</p>
+                    </div>
+
+                    <div v-if="booking.assignedTutor" class="booking-assignment-section">
+                      <span class="label">Assegnazione:</span>
+                      <div class="assignment-info">
+                        👤 Tutor: <strong>{{ booking.assignedTutor.firstName }} {{ booking.assignedTutor.lastName }}</strong>
+                        <span v-if="booking.assignedSlot" class="slot-info">🕒 Slot: {{ booking.assignedSlot }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -803,6 +856,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useToast } from "vue-toastification";
 import { useAuthStore } from '@/stores/auth';
 import { studentsAPI, paymentsAPI, packagesAPI, lessonsAPI } from '@/services/api';
 import CreateStudentModal from '@/components/students/CreateStudentModal.vue';
@@ -815,6 +869,7 @@ import StudentReferralInput from '@/components/students/StudentReferralInput.vue
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const toast = useToast();
 const showEditPackageModal = ref(false);
 const selectedPackage = ref(null);
 const showRegisterPaymentModal = ref(false);
@@ -836,9 +891,13 @@ const storicoTab = ref('pacchetti');
 const lessonFilterStart = ref('');
 const lessonFilterEnd = ref('');
 const historyLessons = ref([]);
+const lessonsLoading = ref(false);
 const lessonsPage = ref(1);
 const lessonsTotal = ref(0);
-const lessonsLoading = ref(false);
+
+// ✅ NUOVO: Stato Prenotazioni
+const bookingHistory = ref([]);
+const loadingBookings = ref(false);
 
 const showEditModal = ref(false);
 const showMenu = ref(false);
@@ -879,7 +938,7 @@ const isAdmin = computed(() => authStore.user?.role === 'ADMIN');
 // Apri modale creazione nuovo pacchetto
 const openCreatePackage = () => {
   if (!student.value.active) {
-    alert('⚠️ Impossibile creare pacchetti per alunni disattivati');
+    toast.warning('Impossibile creare pacchetti per alunni disattivati');
     return;
   }
   
@@ -1034,6 +1093,20 @@ const fetchHistoryLessons = async (reset = false) => {
   }
 };
 
+// ✅ Carica storico prenotazioni
+const fetchBookingHistory = async () => {
+  loadingBookings.value = true;
+  try {
+    const response = await studentsAPI.getBookings(student.value.id);
+    bookingHistory.value = response.data.bookings || [];
+  } catch (error) {
+    console.error('Errore caricamento storico prenotazioni:', error);
+    toast.error('Impossibile caricare lo storico prenotazioni');
+  } finally {
+    loadingBookings.value = false;
+  }
+};
+
 const loadMoreLessons = () => {
   lessonsPage.value++;
   fetchHistoryLessons();
@@ -1047,6 +1120,9 @@ watch([lessonFilterStart, lessonFilterEnd], () => {
 watch(storicoTab, (newVal) => {
   if (newVal === 'lezioni' && historyLessons.value.length === 0) {
     fetchHistoryLessons(true);
+  }
+  if (newVal === 'prenotazioni' && bookingHistory.value.length === 0) {
+    fetchBookingHistory();
   }
 });
 
@@ -1128,7 +1204,6 @@ const getStatoBadgeClass = (stato) => {
     'DA_RINNOVARE': 'stato-da-rinnovare',
     'SCADUTO': 'stato-scaduto',
     'ESAURITO': 'stato-esaurito',
-    'NEGATIVO': 'stato-negativo',
     'DA_PAGARE': 'stato-da-pagare',
     'PAGATO': 'stato-pagato',
     'CHIUSO': 'stato-chiuso',
@@ -1141,7 +1216,7 @@ const getStatoLabel = (stato) => {
     'ATTIVO': 'Attivo',
     'SCADUTO': 'Scaduto',
     'ESAURITO': 'Esaurito',
-    'ORE_NEGATIVE': 'Ore Negative',
+
     'PAGATO': 'Pagato',
     'DA_PAGARE': 'Da Pagare',
   };
@@ -1202,12 +1277,12 @@ const getInvoiceStatusClass = (pkg) => {
 
 const vediLezioniPacchetto = (pkg) => {
   // TODO: Apri lista lezioni filtrate per pacchetto
-  alert(`Vedi lezioni per pacchetto: ${pkg.nome}`);
+  toast.info(`Vedi lezioni per pacchetto: ${pkg.nome}`);
 };
 
 const modificaPacchetto = (pkg) => {
   if (isSaldato(pkg)) {
-    alert('⚠️ Il pacchetto è saldato e non può essere modificato.');
+    toast.warning('Il pacchetto è saldato e non può essere modificato.');
     return;
   }
   
@@ -1281,18 +1356,18 @@ const eliminaPacchetto = async (pkg) => {
     );
     
     if (secondConfirm !== 'ELIMINA') {
-      alert('Eliminazione annullata');
+      toast.info('Eliminazione annullata');
       return;
     }
   }
 
   try {
     await packagesAPI.delete(pkg.id);
-    alert('✅ Pacchetto eliminato con successo!');
+    toast.success('Pacchetto eliminato con successo!');
     loadStudent();
   } catch (error) {
     console.error('Errore eliminazione pacchetto:', error);
-    alert('❌ Errore durante l\'eliminazione del pacchetto');
+    toast.error('Errore durante l\'eliminazione del pacchetto');
   }
 };
 
@@ -1301,14 +1376,14 @@ const eliminaPagamento = async (payment, pkg) => {
 
   try {
     await paymentsAPI.delete(payment.id);
-    alert('✅ Pagamento eliminato con successo!');
+    toast.success('Pagamento eliminato con successo!');
     loadStudent();
   } catch (error) {
     console.error('Errore eliminazione pagamento:', error);
     if (error.response?.status === 400) {
-      alert(error.response.data.error || 'Errore durante l\'eliminazione del pagamento');
+      toast.error(error.response.data.error || 'Errore durante l\'eliminazione del pagamento');
     } else {
-      alert('❌ Errore durante l\'eliminazione del pagamento');
+      toast.error('Errore durante l\'eliminazione del pagamento');
     }
   }
 };
@@ -1344,12 +1419,12 @@ const disattivaAlunno = async () => {
       lastName: student.value.lastName,
       active: false,
     });
-    alert('✅ Alunno disattivato');
+    toast.success('Alunno disattivato');
     loadStudent();
     showMenu.value = false;
   } catch (error) {
     console.error('Errore disattivazione:', error);
-    alert('❌ Errore durante la disattivazione');
+    toast.error('Errore durante la disattivazione');
   }
 };
 
@@ -1362,12 +1437,12 @@ const attivaAlunno = async () => {
       lastName: student.value.lastName,
       active: true,
     });
-    alert('✅ Alunno riattivato con successo');
+    toast.success('Alunno riattivato con successo');
     loadStudent();
     showMenu.value = false;
   } catch (error) {
     console.error('Errore attivazione:', error);
-    alert('❌ Errore durante l\'attivazione');
+    toast.error('Errore durante l\'attivazione');
   }
 };
 
@@ -1383,7 +1458,7 @@ const eliminaAlunno = async () => {
     deleteInfo.value = response.data;
   } catch (error) {
     console.error('Errore caricamento info eliminazione:', error);
-    alert('Errore durante il caricamento delle informazioni');
+    toast.error('Errore durante il caricamento delle informazioni');
     showHardDeleteModal.value = false;
   } finally {
     deleteInfoLoading.value = false;
@@ -1403,11 +1478,11 @@ const confirmHardDelete = async () => {
   
   try {
     await studentsAPI.hardDelete(student.value.id);
-    alert('✅ Alunno eliminato definitivamente');
+    toast.success('Alunno eliminato definitivamente');
     router.push('/students');
   } catch (error) {
     console.error('Errore eliminazione:', error);
-    alert('❌ Errore durante l\'eliminazione');
+    toast.error('Errore durante l\'eliminazione');
   } finally {
     deletingStudent.value = false;
   }
@@ -1433,12 +1508,12 @@ const salvaAnagrafica = async () => {
     };
 
     await studentsAPI.update(student.value.id, updateData);
-    alert('✅ Anagrafica salvata');
+    toast.success('Anagrafica salvata');
     editingAnagrafica.value = false;
     loadStudent();
   } catch (error) {
     console.error('Errore salvataggio:', error);
-    alert('❌ Errore durante il salvataggio');
+    toast.error('Errore durante il salvataggio');
   }
 };
 
@@ -1467,7 +1542,7 @@ const cancelEditAnagrafica = () => {
 // ✅ Apri tab Storico invece del modale
 const openManagePackages = () => {
   if (!student.value.active) {
-    alert('⚠️ Impossibile gestire pacchetti per alunni disattivati');
+    toast.warning('Impossibile gestire pacchetti per alunni disattivati');
     return;
   }
   activeTab.value = 'storico';
@@ -1476,10 +1551,10 @@ const openManagePackages = () => {
 
 const openAddLesson = () => {
   if (!student.value.active) {
-    alert('⚠️ Impossibile aggiungere lezioni per alunni disattivati');
+    toast.warning('Impossibile aggiungere lezioni per alunni disattivati');
     return;
   }
-  alert('Funzionalità in sviluppo');
+  toast.info('Funzionalità in sviluppo');
 };
 
 const handleStudentUpdated = () => {
@@ -2257,11 +2332,6 @@ onMounted(() => {
   color: #f5365c;
 }
 
-/* NEGATIVO - Rosso */
-.stato-negativo {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
 
 /* DA_PAGARE - Giallo */
 .stato-da-pagare {
@@ -2503,6 +2573,13 @@ onMounted(() => {
 .btn-delete-payment:hover {
   background: #f5365c;
   color: white;
+}
+
+.payment-date-small {
+  font-size: 11px;
+  color: #8392ab;
+  margin-left: auto;
+  padding-right: 8px;
 }
 
 .payment-total {
@@ -3505,6 +3582,139 @@ onMounted(() => {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ========================================
+   CSS STORICO PRENOTAZIONI
+======================================== */
+.bookings-list-storico {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.booking-card-storico {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.booking-card-storico:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-color: #5e72e4;
+}
+
+.booking-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.booking-date-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.booking-date {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.booking-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.status-pending { background: #fee2e2; color: #ef4444; }
+.status-confirmed { background: #dcfce7; color: #16a34a; }
+.status-cancelled { background: #f1f5f9; color: #64748b; }
+.status-completed { background: #e0e7ff; color: #4338ca; }
+
+.booking-creation-date {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.booking-card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.booking-card-body .label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.booking-subjects-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subject-tag {
+  padding: 2px 10px;
+  background: #f1f5f9;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.notes-content {
+  font-size: 13px;
+  color: #334155;
+  background: #f8fafc;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px dashed #e2e8f0;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.assignment-info {
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.slot-info {
+  margin-left: 12px;
+  color: #5e72e4;
+  font-weight: 600;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 40px;
+  color: #64748b;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #f1f5f9;
+  border-top: 3px solid #5e72e4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
 
 </style>
 

@@ -277,6 +277,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import { studentsAPI } from '@/services/api';
 
 const props = defineProps({
@@ -296,6 +297,7 @@ const saving = ref(false);
 const showDuplicateModal = ref(false);
 const duplicateStudents = ref([]);
 const skipDuplicateCheck = ref(false);
+const toast = useToast();
 
 const formData = ref({
   firstName: '',
@@ -421,17 +423,17 @@ const performSave = async () => {
 
     if (isEditMode.value) {
       await studentsAPI.update(props.student.id, payload);
-      alert('✅ Alunno modificato con successo!');
+      toast.success('Alunno modificato con successo!');
     } else {
       await studentsAPI.create(payload);
-      alert('✅ Alunno creato con successo!');
+      toast.success('Alunno creato con successo!');
     }
 
     emit('saved');
     handleClose();
   } catch (error) {
     console.error('Errore salvataggio studente:', error);
-    alert('❌ Errore durante il salvataggio');
+    toast.error('Errore durante il salvataggio');
   } finally {
     saving.value = false;
     skipDuplicateCheck.value = false;

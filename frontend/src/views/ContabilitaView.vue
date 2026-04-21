@@ -413,6 +413,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
+import { useToast } from "vue-toastification";
 import { accountingAPI } from '@/services/api';
 
 // State
@@ -422,6 +423,7 @@ const categories = ref([]);
 const pagination = ref({ page: 1, pages: 1, total: 0 });
 const loading = ref(false);
 const saving = ref(false);
+const toast = useToast();
 
 // Filtri
 const periodoPreset = ref('mese_corrente');
@@ -603,7 +605,7 @@ function editMovimento(mov) {
 
 async function saveMovimento() {
   if (!form.value.tipo || !form.value.importo || !form.value.descrizione || !form.value.categoria) {
-    alert('Compila tutti i campi obbligatori');
+    toast.warning('Compila tutti i campi obbligatori');
     return;
   }
   
@@ -620,7 +622,7 @@ async function saveMovimento() {
   } catch (error) {
     console.error('Errore salvataggio:', error);
     const errorMessage = error.response?.data?.error || 'Errore durante il salvataggio';
-    alert(errorMessage);
+    toast.error(errorMessage);
   } finally {
     saving.value = false;
   }
@@ -639,7 +641,7 @@ async function deleteMovimento(mov) {
     await loadData();
   } catch (error) {
     console.error('Errore eliminazione:', error);
-    alert(error.response?.data?.error || 'Errore durante l\'eliminazione');
+    toast.error(error.response?.data?.error || 'Errore durante l\'eliminazione');
   }
 }
 

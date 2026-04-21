@@ -90,7 +90,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { studentsAPI } from '@/services/api';
 import StudentStatsCards from '@/components/students/StudentStatsCards.vue';
 import StudentFilters from '@/components/students/StudentFilters.vue';
@@ -101,6 +101,7 @@ import AnnualPaymentsView from '@/components/students/AnnualPaymentsView.vue';
 
 
 const router = useRouter();
+const route = useRoute();
 
 // Tab attivo
 const activeTab = ref('alunni');
@@ -260,6 +261,14 @@ const closeManagePackagesModal = () => {
 
 
 onMounted(() => {
+  // Parsing dei filtri passati dalla Dashboard (o URL)
+  if (route.query.stato) {
+    filters.value.stato = route.query.stato;
+  }
+  if (route.query.pagamentoSospeso === 'true') {
+    filters.value.pagamentoSospeso = true;
+  }
+  
   loadStudents();
 });
 

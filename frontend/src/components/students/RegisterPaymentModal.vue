@@ -173,6 +173,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import { paymentsAPI } from '@/services/api';
 
 // ========================================
@@ -187,6 +188,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'saved']);
+const toast = useToast();
 
 // ========================================
 // STATE
@@ -314,7 +316,7 @@ const formatCurrency = (value) => {
 const handleSubmit = async () => {
   // Validazione importo
   if (!form.value.importo || form.value.importo <= 0) {
-    alert('⚠️ Inserisci un importo valido');
+    toast.warning('Inserisci un importo valido');
     return;
   }
 
@@ -322,23 +324,23 @@ const handleSubmit = async () => {
   const importo = parseFloat(form.value.importo);
 
   if (importo > residuo) {
-    alert('⚠️ L\'importo non può superare il residuo da pagare');
+    toast.error('⚠️ L\'importo non può superare il residuo da pagare');
     return;
   }
 
   // ✅ Validazione tipo pagamento in base all'importo
   if (form.value.tipoPagamento === 'SALDO' && importo < residuo) {
-    alert('⚠️ Non puoi selezionare "Saldo" se l\'importo è inferiore al residuo');
+    toast.error('⚠️ Non puoi selezionare "Saldo" se l\'importo è inferiore al residuo');
     return;
   }
 
   if (form.value.tipoPagamento === 'ACCONTO' && Math.abs(importo - residuo) < 0.01) {
-    alert('⚠️ Non puoi selezionare "Acconto" se l\'importo corrisponde al saldo totale');
+    toast.error('⚠️ Non puoi selezionare "Acconto" se l\'importo corrisponde al saldo totale');
     return;
   }
 
   if (form.value.tipoPagamento === 'INTEGRAZIONE' && Math.abs(importo - residuo) < 0.01) {
-    alert('⚠️ Non puoi selezionare "Integrazione" se l\'importo corrisponde al saldo totale');
+    toast.error('⚠️ Non puoi selezionare "Integrazione" se l\'importo corrisponde al saldo totale');
     return;
   }
 
@@ -357,12 +359,12 @@ const handleSubmit = async () => {
 
     await paymentsAPI.create(payload);
     
-    alert('✅ Pagamento registrato con successo!');
+    toast.success('Pagamento registrato con successo!');
     emit('saved');
     emit('close');
   } catch (error) {
     console.error('Errore registrazione pagamento:', error);
-    alert('❌ Errore durante la registrazione del pagamento');
+    toast.error('Errore: ' + (error.response?.data?.error || error.message));
   } finally {
     submitting.value = false;
   }

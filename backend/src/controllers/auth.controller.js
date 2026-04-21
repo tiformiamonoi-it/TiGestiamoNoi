@@ -110,8 +110,12 @@ const createUser = async (req, res, next) => {
     const { email, password, firstName, lastName, role, phone, active } = req.body;
 
     // Validazione
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email || !password || !firstName || !lastName) {
       return res.status(400).json({ error: 'Email, password, nome e cognome sono obbligatori' });
+    }
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Formato email non valido' });
     }
 
     // Verifica email unica
@@ -153,6 +157,12 @@ const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { firstName, lastName, email, role, phone, active } = req.body;
+
+    // Validazione email se presente
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (email && !emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Formato email non valido' });
+    }
 
     const user = await prisma.user.update({
       where: { id },

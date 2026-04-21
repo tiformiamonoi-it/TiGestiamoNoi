@@ -8,7 +8,7 @@
  * - DA_RINNOVARE: avviso rinnovo (< 20% residuo O <= 3 giorni a scadenza)
  * - SCADUTO: data scadenza superata
  * - ESAURITO: ore/giorni = 0
- * - NEGATIVO: ore/giorni < 0 (debito)
+ * - ESAURITO: ore/giorni = 0
  * - DA_PAGARE: importoResiduo > 0
  * - PAGATO: importoResiduo = 0
  * - CHIUSO: PAGATO + (SCADUTO o ESAURITO)
@@ -24,6 +24,10 @@ function calculatePackageStates(pkg) {
   const oggi = new Date();
   oggi.setHours(0, 0, 0, 0);
 
+  // Forza residuo a non essere negativo se minore di zero (sanatoria runtime)
+  // Questo previene la visualizzazione di residui negativi se presenti nel DB
+  const adjustResiduo = (val) => Math.max(0, val);
+
   // ============================================
   // VARIABILI BASE
   // ============================================
@@ -36,7 +40,7 @@ function calculatePackageStates(pkg) {
   const importoResiduo = parseFloat(pkg.importoResiduo || 0);
 
   // Determina il residuo in base al tipo di pacchetto
-  const residuo = tipo === 'MENSILE' ? giorniResidui : oreResidue;
+  const residuo = tipo === 'MENSILE' ? adjustResiduo(giorniResidui) : adjustResiduo(oreResidue);
   const totale = tipo === 'MENSILE' ? giorniAcquistati : oreAcquistate;
 
   // Calcola percentuale residuo
@@ -57,10 +61,7 @@ function calculatePackageStates(pkg) {
   // REGOLA 1: STATI ORE/GIORNI
   // ============================================
 
-  if (residuo < 0) {
-    // Ore/giorni in debito
-    stati.push('NEGATIVO');
-  } else if (residuo === 0) {
+  if (residuo === 0) {
     // Ore/giorni esauriti
     stati.push('ESAURITO');
   }
@@ -78,8 +79,8 @@ function calculatePackageStates(pkg) {
   // Solo se: residuo > 0 E non scaduto
   // ============================================
 
-  const isNegativoOEsaurito = stati.includes('NEGATIVO') || stati.includes('ESAURITO');
-  if (!isNegativoOEsaurito && !isScaduto && residuo > 0) {
+  const isEsaurito = stati.includes('ESAURITO');
+  if (!isEsaurito && !isScaduto && residuo > 0) {
     stati.push('ATTIVO');
   }
 
@@ -193,16 +194,23 @@ function isPacchettoAttivo(pkg) {
 
 /**
  * Aggiorna gli stati di un pacchetto e calcola ore perse
- * @param {string} packageId - ID del pacchetto
+ * @param {string|Object} packageIdOrPkg - ID del pacchetto o oggetto pacchetto completo
  * @returns {Promise<Object>} - Pacchetto aggiornato
  */
-async function updatePackageStates(packageId) {
+async function updatePackageStates(packageIdOrPkg) {
   const prisma = require('../config/prisma');
 
-  // Carica pacchetto
-  const pkg = await prisma.package.findUnique({
-    where: { id: packageId },
-  });
+  let pkg = packageIdOrPkg;
+  let packageId = packageIdOrPkg;
+
+  // Se è una stringa (ID), carica pacchetto
+  if (typeof packageIdOrPkg === 'string') {
+    pkg = await prisma.package.findUnique({
+      where: { id: packageId },
+    });
+  } else {
+    packageId = pkg.id;
+  }
 
   if (!pkg) {
     throw new Error('Pacchetto non trovato');
@@ -231,6 +239,15 @@ async function updatePackageStates(packageId) {
       // Per ORE: Ore Perse = Ore Residue (positive)
       orePerse = Math.max(0, oreResiduo);
     }
+  }
+
+  // Verifica se è necessario un aggiornamento su DB
+  const currentStati = pkg.stati || [];
+  const statiChanged = currentStati.length !== nuoviStati.length || !nuoviStati.every(s => currentStati.includes(s));
+  const orePerseChanged = parseFloat(pkg.orePerse || 0) !== orePerse;
+
+  if (!statiChanged && !orePerseChanged) {
+    return pkg; // Nessun cambiamento, evita la query di update
   }
 
   // Aggiorna nel database
@@ -296,13 +313,11 @@ function isPacchettoValidoPerLezioni(pkg) {
 
   // Se abbiamo già gli stati calcolati, usa quelli
   if (Array.isArray(pkg.stati)) {
-    // Deve essere ATTIVO e NON SCADUTO/ESAURITO/NEGATIVO
     const isAttivo = pkg.stati.includes('ATTIVO');
     const isScaduto = pkg.stati.includes('SCADUTO');
     const isEsaurito = pkg.stati.includes('ESAURITO');
-    const isNegativo = pkg.stati.includes('NEGATIVO');
 
-    return isAttivo && !isScaduto && !isEsaurito && !isNegativo;
+    return isAttivo && !isScaduto && !isEsaurito;
   }
 
   // Fallback: calcola manualmente
@@ -322,7 +337,7 @@ function isPacchettoValidoPerLezioni(pkg) {
     ? parseInt(pkg.giorniResiduo || 0)
     : parseFloat(pkg.oreResiduo || 0);
 
-  if (residuo <= 0) return false; // ESAURITO o NEGATIVO
+  if (residuo <= 0) return false; // ESAURITO
 
   return true; // ATTIVO
 }

@@ -8,8 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL")
 }
 
@@ -21,24 +21,24 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password  String   // Hash bcrypt
+  password  String // Hash bcrypt
   firstName String
   lastName  String
   role      UserRole @default(TUTOR)
   phone     String?
   active    Boolean  @default(true)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relazioni
   tutorProfile        TutorProfile?
-  lessonsAsTutor      Lesson[]           @relation("TutorLessons")
+  lessonsAsTutor      Lesson[]             @relation("TutorLessons")
   tutorPayments       TutorPayment[]
   tutorReimbursements TutorReimbursement[]
   tutorAvailabilities TutorAvailability[]
-  bookingAssignments  Booking[]          @relation("BookingAssignments")
-  
+  bookingAssignments  BookingSubject[]    @relation("SubjectAssignments")
+
   @@index([email])
   @@map("users")
 }
@@ -56,15 +56,15 @@ model TutorProfile {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Informazioni di contatto opzionali
-  indirizzo      String? // Via, numero civico
-  citta          String?
-  cap            String?
-  codiceFiscale  String?
-  partitaIva     String?
+  indirizzo     String? // Via, numero civico
+  citta         String?
+  cap           String?
+  codiceFiscale String?
+  partitaIva    String?
 
   // Materie insegnate e note
-  materie       String[] // Materie insegnate
-  noteInterne   String?
+  materie     String[] // Materie insegnate
+  noteInterne String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -78,61 +78,61 @@ model TutorProfile {
 
 // Studente
 model Student {
-  id        String  @id @default(cuid())
+  id        String @id @default(cuid())
   firstName String
   lastName  String
-  
+
   // Informazioni scolastiche
   classe String? // Es: "3° Media", "1° Superiore"
   scuola String?
 
-  studentPhone          String?    // Numero alunno
-  studentEmail          String?    // Email alunno (opzionale)
-  
+  studentPhone String? // Numero alunno
+  studentEmail String? // Email alunno (opzionale)
+
   // Informazioni genitore (per fatturazione)
-  parentName     String? // Nome genitore/tutore legale
-  parentEmail    String?
-  parentPhone    String?
+  parentName      String? // Nome genitore/tutore legale
+  parentEmail     String?
+  parentPhone     String?
   parentIndirizzo String? // Via, numero civico
   parentCitta     String?
   parentCap       String?
   parentCF        String? // Codice Fiscale
   parentPIva      String? // Partita IVA (se azienda)
-  
-  active Boolean @default(true)
-  note   String?
-  referral       String?       // DEPRECATED: usa referredBy relation
+
+  active          Boolean @default(true)
+  note            String?
+  referral        String? // DEPRECATED: usa referredBy relation
   bisogniSpeciali String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relazioni
-  pacchetti Package[]
+  pacchetti      Package[]
   lessonStudents LessonStudent[]
-  
-  // Relazioni Referral (many-to-many)
-  referredBy    StudentReferral[] @relation("ReferredStudent")  // Chi mi ha portato
-  referrals     StudentReferral[] @relation("ReferringStudent") // Chi ho portato io
 
-  @@index([lastName, firstName])
+  // Relazioni Referral (many-to-many)
+  referredBy StudentReferral[] @relation("ReferredStudent") // Chi mi ha portato
+  referrals  StudentReferral[] @relation("ReferringStudent") // Chi ho portato io
+
+  @@index([active, lastName, firstName])
   @@map("students")
 }
 
 // Relazione Referral tra studenti (many-to-many)
 model StudentReferral {
-  id              String   @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Lo studente che è stato portato
-  referredId      String
-  referred        Student  @relation("ReferredStudent", fields: [referredId], references: [id], onDelete: Cascade)
-  
+  referredId String
+  referred   Student @relation("ReferredStudent", fields: [referredId], references: [id], onDelete: Cascade)
+
   // Lo studente che ha portato (referrer)
-  referrerId      String
-  referrer        Student  @relation("ReferringStudent", fields: [referrerId], references: [id], onDelete: Cascade)
-  
-  createdAt       DateTime @default(now())
-  
+  referrerId String
+  referrer   Student @relation("ReferringStudent", fields: [referrerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@unique([referredId, referrerId])
   @@index([referredId])
   @@index([referrerId])
@@ -145,28 +145,28 @@ model StudentReferral {
 
 // Pacchetti Standard - Template da impostazioni
 model StandardPackage {
-  id          String      @id @default(cuid())
-  nome        String      // Es: "Medie - Mensile", "Superiori - 10 Ore"
+  id          String  @id @default(cuid())
+  nome        String // Es: "Medie - Mensile", "Superiori - 10 Ore"
   descrizione String?
-  
+
   // Tipo pacchetto
-  tipo        PackageType @default(ORE)
-  
+  tipo PackageType @default(ORE)
+
   // Categoria
-  categoria   String      // Es: "Medie", "Superiori", "Elementari", "Preparazione Esami"
-  
+  categoria String // Es: "Medie", "Superiori", "Elementari", "Preparazione Esami"
+
   // Quantità standard
-  oreIncluse         Decimal  @db.Decimal(10, 2) // Ore totali
-  giorniInclusi      Int?     // Solo per MENSILE
-  orarioGiornaliero  Decimal? @db.Decimal(10, 2) // Ore al giorno per MENSILE
-  
+  oreIncluse        Decimal  @db.Decimal(10, 2) // Ore totali
+  giorniInclusi     Int? // Solo per MENSILE
+  orarioGiornaliero Decimal? @db.Decimal(10, 2) // Ore al giorno per MENSILE
+
   // Prezzo standard
   prezzoStandard Decimal @db.Decimal(10, 2)
-  
+
   // Validità standard (in giorni)
-  
+
   active Boolean @default(true)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -183,9 +183,9 @@ model StandardPackage {
 
 // Pacchetto Ore/Giorni acquistato da studente
 model Package {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   studentId String
-  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   // Template di partenza (opzionale)
   standardPackageId String?
@@ -198,26 +198,26 @@ model Package {
   tipo PackageType @default(ORE)
 
   // Quantità (può essere modificata rispetto al template)
-  oreAcquistate    Decimal  @db.Decimal(10, 2) // Ore totali acquistate
-  oreResiduo       Decimal  @db.Decimal(10, 2) // Ore rimanenti (può andare in negativo)
-  orePerse         Decimal  @default(0) @db.Decimal(10, 2)
-  
-  giorniAcquistati Int?     // Solo per pacchetti mensili
-  giorniResiduo    Int?     // Giorni rimanenti
+  oreAcquistate Decimal @db.Decimal(10, 2) // Ore totali acquistate
+  oreResiduo    Decimal @db.Decimal(10, 2) // Ore rimanenti (può andare in negativo)
+  orePerse      Decimal @default(0) @db.Decimal(10, 2)
+
+  giorniAcquistati  Int? // Solo per pacchetti mensili
+  giorniResiduo     Int? // Giorni rimanenti
   orarioGiornaliero Decimal? @db.Decimal(10, 2) // Es: 3.00 ore al giorno
 
   // Dettagli economici (personalizzabili)
-  prezzoTotale     Decimal @db.Decimal(10, 2) // Prezzo concordato per questo pacchetto
-  importoPagato    Decimal @default(0) @db.Decimal(10, 2) // Totale già pagato
-  importoResiduo   Decimal @db.Decimal(10, 2) // Residuo da pagare
+  prezzoTotale   Decimal @db.Decimal(10, 2) // Prezzo concordato per questo pacchetto
+  importoPagato  Decimal @default(0) @db.Decimal(10, 2) // Totale già pagato
+  importoResiduo Decimal @db.Decimal(10, 2) // Residuo da pagare
 
   // Validità
   dataInizio   DateTime
   dataScadenza DateTime?
-  
+
   // Stati del pacchetto (gestiti dinamicamente)
   stati PackageStatus[] @default([ATTIVO]) // Array di stati
-  
+
   note String?
 
   createdAt DateTime @default(now())
@@ -229,12 +229,14 @@ model Package {
   movimentiContabili AccountingEntry[]
 
   @@index([studentId, stati])
+  @@index([studentId, tipo])
+  @@index([tipo, createdAt(sort: Desc)])
   @@map("packages")
 }
 
 enum PackageType {
-  ORE      // Pacchetto a ore (es: 10 ore)
-  MENSILE  // Pacchetto mensile (es: 20 giorni × 3 ore/giorno)
+  ORE // Pacchetto a ore (es: 10 ore)
+  MENSILE // Pacchetto mensile (es: 20 giorni × 3 ore/giorno)
 }
 
 // =====================================
@@ -244,28 +246,26 @@ enum PackageType {
 enum PackageStatus {
   // --- STATI UTILIZZO ---
   // Questi stati indicano se il pacchetto può essere usato per lezioni
-  ATTIVO          // Pacchetto utilizzabile: oreResiduo > 0 (o giorniResiduo > 0) E non scaduto
-  DA_RINNOVARE    // Avviso rinnovo: residuo < 20% OPPURE <= 3 giorni a scadenza
-                  // Coesiste con ATTIVO, serve come promemoria per rinnovare
-  
-  // --- STATI FINE ---
-  // Questi stati indicano che il pacchetto non è più utilizzabile normalmente
-  // ATTENZIONE: rimangono selezionabili per gestire ore extra (stato NEGATIVO)
-  SCADUTO         // Data scadenza superata: dataScadenza < oggi
-  ESAURITO        // Risorse terminate: oreResiduo = 0 (o giorniResiduo = 0)
-  NEGATIVO        // Risorse in debito: oreResiduo < 0 - l'alunno ha usato ore extra
-                  // Le ore extra andranno trasferite al nuovo pacchetto al rinnovo
-  
+  ATTIVO // Pacchetto utilizzabile: oreResiduo > 0 (o giorniResiduo > 0) E non scaduto
+  DA_RINNOVARE // Avviso rinnovo: residuo < 20% OPPURE <= 3 giorni a scadenza
+  // Coesiste con ATTIVO, serve come promemoria per rinnovare
+
+
+  SCADUTO // Data scadenza superata: dataScadenza < oggi
+  ESAURITO // Risorse terminate: oreResiduo = 0 (o giorniResiduo = 0)
+
+
+
   // --- STATI PAGAMENTO ---
   // Sempre uno dei due, mai entrambi
-  DA_PAGARE       // Manca il saldo: importoResiduo > 0 (anche con acconto presente)
-  PAGATO          // Completamente saldato: importoResiduo = 0
-  
+  DA_PAGARE // Manca il saldo: importoResiduo > 0 (anche con acconto presente)
+  PAGATO // Completamente saldato: importoResiduo = 0
+
   // --- STATO FINALE ---
   // Quando un pacchetto è PAGATO + (SCADUTO o ESAURITO), diventa CHIUSO
   // CHIUSO viene salvato insieme agli altri stati ma visualizzato DA SOLO nel frontend
   // Se si elimina il saldo o si modificano ore/scadenza, CHIUSO viene rimosso
-  CHIUSO          // Pacchetto concluso: non selezionabile per nuove lezioni
+  CHIUSO // Pacchetto concluso: non selezionabile per nuove lezioni
 }
 
 // ============================================
@@ -274,21 +274,21 @@ enum PackageStatus {
 
 // Pagamenti per pacchetti (acconti, saldi, rate)
 model Payment {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   packageId String
-  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
 
   // Dettagli pagamento
-  importo           Decimal       @db.Decimal(10, 2)
-  tipoPagamento     PaymentType   @default(ACCONTO)
-  metodoPagamento   PaymentMethod @default(CONTANTI)
-  
-  richiedeFattura   Boolean       @default(false)
+  importo         Decimal       @db.Decimal(10, 2)
+  tipoPagamento   PaymentType   @default(ACCONTO)
+  metodoPagamento PaymentMethod @default(CONTANTI)
+
+  richiedeFattura Boolean @default(false)
 
   // Data e riferimenti
   dataPagamento DateTime @default(now())
-  riferimento   String?  // Numero ricevuta, bonifico, ecc.
-  
+  riferimento   String? // Numero ricevuta, bonifico, ecc.
+
   note String?
 
   createdAt DateTime @default(now())
@@ -302,9 +302,9 @@ model Payment {
 }
 
 enum PaymentType {
-  ACCONTO  // Pagamento parziale iniziale
-  SALDO    // Pagamento finale
-  RATA     // Pagamento rateale
+  ACCONTO // Pagamento parziale iniziale
+  SALDO // Pagamento finale
+  RATA // Pagamento rateale
   INTEGRAZIONE // Integrazione per pacchetto modificato
 }
 
@@ -323,12 +323,12 @@ enum PaymentMethod {
 // Slot orari predefiniti configurabili
 model TimeSlot {
   id          String  @id @default(cuid())
-  oraInizio   String  // Es: "15:30"
-  oraFine     String  // Es: "16:30"
+  oraInizio   String // Es: "15:30"
+  oraFine     String // Es: "16:30"
   descrizione String? // Es: "Pomeriggio - Primo turno"
-  
+
   active Boolean @default(true)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -349,23 +349,23 @@ model TimeSlot {
 
 // Lezione (una lezione può avere più studenti)
 model Lesson {
-  id         String     @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Tutor
   tutorId String
   tutor   User   @relation("TutorLessons", fields: [tutorId], references: [id])
 
   // Dettagli lezione
   data DateTime
-  
+
   // Slot orario standard
   timeSlotId String
   timeSlot   TimeSlot @relation(fields: [timeSlotId], references: [id])
 
   // Tipo lezione calcolato automaticamente
-  tipo          LessonType @default(SINGOLA)
-  forzaGruppo   Boolean    @default(false)
-  
+  tipo        LessonType @default(SINGOLA)
+  forzaGruppo Boolean    @default(false)
+
   // Compenso tutor per questa lezione
   compensoTutor Decimal? @db.Decimal(10, 2)
 
@@ -380,39 +380,39 @@ model Lesson {
   movimentiContabili AccountingEntry[]
 
   @@index([data, tutorId])
+  @@index([tutorId, data(sort: Desc)])
   @@map("lessons")
 }
 
 // Tabella ponte: Studenti in una lezione
 model LessonStudent {
-  id        String  @id @default(cuid())
+  id        String @id @default(cuid())
   lessonId  String
   studentId String
   packageId String
-  
+
   // Dettagli specifici studente
   mezzaLezione Boolean @default(false)
   oreScalate   Decimal @default(1.0) @db.Decimal(10, 2)
-  
+
   createdAt DateTime @default(now())
-  
+
   // Relazioni
   lesson  Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  
+
   @@unique([lessonId, studentId])
   @@index([studentId])
-  @@index([packageId])
+  @@index([packageId, studentId])
   @@map("lesson_students")
 }
 
 enum LessonType {
-  SINGOLA     // 1 studente
-  GRUPPO      // 2-3 studenti
-  MAXI        // 4+ studenti
+  SINGOLA // 1 studente
+  GRUPPO // 2-3 studenti
+  MAXI // 4+ studenti
 }
-
 
 // ============================================
 // CONTABILITÀ
@@ -424,7 +424,7 @@ model AccountingEntry {
 
   // Tipo movimento
   tipo AccountingType
-  
+
   // Importo (sempre positivo, tipo definisce entrata/uscita)
   importo Decimal @db.Decimal(10, 2)
 
@@ -445,30 +445,32 @@ model AccountingEntry {
   paymentId String?  @unique
   payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
-  tutorPaymentId String? @unique
+  tutorPaymentId String?       @unique
   tutorPayment   TutorPayment? @relation(fields: [tutorPaymentId], references: [id], onDelete: SetNull)
 
   reimbursementId String?
   reimbursement   TutorReimbursement? @relation(fields: [reimbursementId], references: [id], onDelete: SetNull)
 
   metodoPagamento PaymentMethod?
-  fatturaEmessa   Boolean @default(false)
+  fatturaEmessa   Boolean        @default(false)
 
   // Metadati
   note String?
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([data, tipo])
+  @@index([tipo, data(sort: Desc)])
+  @@index([categoria])
+  @@index([metodoPagamento])
   @@index([reimbursementId])
   @@map("accounting_entries")
 }
 
 enum AccountingType {
-  ENTRATA  // Pagamento pacchetto
-  USCITA   // Compenso tutor, spese
-  NOTA     // Movimento di nota (non influisce sul saldo)
+  ENTRATA // Pagamento pacchetto
+  USCITA // Compenso tutor, spese
+  NOTA // Movimento di nota (non influisce sul saldo)
 }
 
 // ============================================
@@ -480,10 +482,10 @@ model SystemConfig {
   id    String @id @default(cuid())
   key   String @unique
   value String
-  
+
   description String?
   category    String? // Es: "tariffe", "generale", "notifiche"
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -491,35 +493,34 @@ model SystemConfig {
   @@map("system_configs")
 }
 
-
 // ============================================
 // PAGAMENTI TUTOR
 // ============================================
 
 model TutorPayment {
-  id            String        @id @default(cuid())
-  tutorId       String
-  tutor         User          @relation(fields: [tutorId], references: [id])
-  
+  id      String @id @default(cuid())
+  tutorId String
+  tutor   User   @relation(fields: [tutorId], references: [id])
+
   // Mese di riferimento (salvato come primo del mese, es: 2025-11-01)
-  mese          DateTime      
-  
-  importo       Decimal       @db.Decimal(10, 2)
-  
+  mese DateTime
+
+  importo Decimal @db.Decimal(10, 2)
+
   dataPagamento DateTime      @default(now())
   metodo        PaymentMethod @default(BONIFICO)
-  
-  note          String?
-  
-  status        TutorPaymentStatus @default(PAGATO)
-  
+
+  note String?
+
+  status TutorPaymentStatus @default(PAGATO)
+
   movimentoContabile AccountingEntry?
 
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("tutor_payments")
   @@index([tutorId, mese])
+  @@map("tutor_payments")
 }
 
 enum TutorPaymentStatus {
@@ -533,30 +534,30 @@ enum TutorPaymentStatus {
 // ============================================
 
 model TutorReimbursement {
-  id            String   @id @default(cuid())
-  tutorId       String
-  tutor         User     @relation(fields: [tutorId], references: [id])
-  
-  importo       Decimal  @db.Decimal(10, 2)  // Importo totale rimborso
-  importoPagato Decimal  @default(0) @db.Decimal(10, 2) // Quanto pagato
-  descrizione   String   // Es: "Trasferta Milano"
-  
-  dataRichiesta DateTime @default(now())
+  id      String @id @default(cuid())
+  tutorId String
+  tutor   User   @relation(fields: [tutorId], references: [id])
+
+  importo       Decimal @db.Decimal(10, 2) // Importo totale rimborso
+  importoPagato Decimal @default(0) @db.Decimal(10, 2) // Quanto pagato
+  descrizione   String // Es: "Trasferta Milano"
+
+  dataRichiesta DateTime  @default(now())
   dataPagamento DateTime?
-  
-  stato         ReimbursementStatus @default(DA_PAGARE)
-  metodo        PaymentMethod?
-  
-  note          String?
-  
+
+  stato  ReimbursementStatus @default(DA_PAGARE)
+  metodo PaymentMethod?
+
+  note String?
+
   // Relazione con contabilità (1:many - può avere più pagamenti/acconti)
   movimentiContabili AccountingEntry[]
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
 
-  @@map("tutor_reimbursements")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([tutorId, stato])
+  @@map("tutor_reimbursements")
 }
 
 enum ReimbursementStatus {
@@ -570,40 +571,56 @@ enum ReimbursementStatus {
 // ============================================
 
 model Booking {
-  id              String        @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Dati studente (non autenticato)
-  studentName     String
-  studentSurname  String
-  studentPhone    String
-  
+  studentName    String
+  studentSurname String
+  studentPhone   String
+
   // Prenotazione
-  requestedDate   DateTime      // Data richiesta
-  subjects        String[]      // Array materie selezionate
-  notes           String?       // Note opzionali
-  
+  requestedDate DateTime // Data richiesta
+  notes         String? // Note opzionali
+
+  // Relazione con le materie (record distinti per ogni materia)
+  subjects BookingSubject[]
+
   // Stato
-  status          BookingStatus @default(PENDING)
-  
-  // Assegnazione Tutor (opzionale, compilato da admin in matching)
-  assignedTutorId String?       // ID del tutor assegnato
-  assignedTutor   User?         @relation("BookingAssignments", fields: [assignedTutorId], references: [id])
-  assignedSlot    String?       // Slot orario: "15:30-16:30", "16:30-17:30", "17:30-18:30"
-  assignedAt      DateTime?     // Quando è stato assegnato
-  
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  status BookingStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status, requestedDate])
-  @@index([assignedTutorId, requestedDate])
   @@map("bookings")
 }
 
+model BookingSubject {
+  id String @id @default(cuid())
+
+  name      String // Nome materia
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  // Assegnazione Tutor (opzionale, compilato da admin in matching)
+  assignedTutorId String? // ID del tutor assegnato
+  assignedTutor   User?     @relation("SubjectAssignments", fields: [assignedTutorId], references: [id])
+  assignedSlot    String? // Slot orario: "15:30-16:30", "16:30-17:30", "17:30-18:30"
+  assignedAt      DateTime? // Quando è stato assegnato
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bookingId])
+  @@index([assignedTutorId])
+  @@map("booking_subjects")
+}
+
 enum BookingStatus {
-  PENDING     // In attesa di conferma
-  CONFIRMED   // Confermata
-  CANCELLED   // Annullata
-  COMPLETED   // Completata
+  PENDING // In attesa di conferma
+  CONFIRMED // Confermata
+  CANCELLED // Annullata
+  COMPLETED // Completata
 }
 
 // ============================================
@@ -611,20 +628,20 @@ enum BookingStatus {
 // ============================================
 
 model TutorAvailability {
-  id          String   @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Tutor (relazione con User)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Data di disponibilità
-  date        DateTime // Solo data (inizio giornata)
-  
+  date DateTime // Solo data (inizio giornata)
+
   // Note opzionali (es: "Disponibile dalle 15")
-  notes       String?
-  
-  createdAt   DateTime @default(now())
-  
+  notes String?
+
+  createdAt DateTime @default(now())
+
   @@unique([userId, date]) // Un tutor può avere una sola disponibilità per giorno
   @@index([date])
   @@map("tutor_availabilities")
@@ -635,13 +652,13 @@ model TutorAvailability {
 // ============================================
 
 model ClosureDate {
-  id          String   @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   date        DateTime // Data di chiusura
-  description String?  // Descrizione (es: "Natale", "Pasqua")
-  
-  createdAt   DateTime @default(now())
-  
+  description String? // Descrizione (es: "Natale", "Pasqua")
+
+  createdAt DateTime @default(now())
+
   @@unique([date])
   @@index([date])
   @@map("closure_dates")

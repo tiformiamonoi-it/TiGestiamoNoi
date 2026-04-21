@@ -267,7 +267,6 @@ const getStates = (student) => {
     'DA_RINNOVARE': { type: 'warning', label: 'Da Rinnovare' },
     'SCADUTO': { type: 'danger', label: 'Scaduto' },
     'ESAURITO': { type: 'danger', label: 'Esaurito' },
-    'NEGATIVO': { type: 'danger', label: 'Negativo' },
     'DA_PAGARE': { type: 'payment', label: 'Da Pagare' },
     'PAGATO': { type: 'paid', label: 'Pagato' },
   };
@@ -499,7 +498,7 @@ onUnmounted(() => {
   color: #fb6340;
 }
 
-/* SCADUTO, ESAURITO, NEGATIVO - Rosso */
+/* SCADUTO, ESAURITO - Rosso */
 .state-danger {
   background: rgba(245, 54, 92, 0.15);
   color: #f5365c;

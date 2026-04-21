@@ -101,5 +101,8 @@ router.delete('/:id/hard-delete',
   studentsController.hardDeleteStudent
 );
 
+// GET /api/students/:id/bookings - Recupera prenotazioni studente tramite telefono
+router.get('/:id/bookings', studentsController.getStudentBookings);
+
 module.exports = router;
 

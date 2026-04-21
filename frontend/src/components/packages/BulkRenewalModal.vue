@@ -263,6 +263,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import { packagesAPI, standardPackagesAPI, studentsAPI } from '@/services/api';
 
 const props = defineProps({
@@ -280,6 +281,7 @@ const selectedMode = ref('same');
 const submitting = ref(false);
 const standardPackages = ref([]);
 const loadingStandard = ref(false);
+const toast = useToast();
 
 // Common config
 const commonStartDate = ref('');
@@ -401,7 +403,7 @@ async function handleSubmit() {
           oreAcquistate: stdPkg.tipo === 'ORE' ? stdPkg.oreIncluse : (stdPkg.giorniInclusi * stdPkg.orarioGiornaliero),
           giorniAcquistati: stdPkg.giorniInclusi,
           orarioGiornaliero: stdPkg.orarioGiornaliero,
-          nome: `${pkg.student?.lastName} ${pkg.student?.firstName} - ${stdPkg.nome}`
+          nome: stdPkg.nome
         });
         promises.push(packagesAPI.create(payload));
       }
@@ -424,9 +426,7 @@ async function handleSubmit() {
             : pkg.oreAcquistate,
           giorniAcquistati: stdPkg?.giorniInclusi || pkg.giorniAcquistati,
           orarioGiornaliero: stdPkg?.orarioGiornaliero || pkg.orarioGiornaliero,
-          nome: stdPkg ? 
-            `${pkg.student?.lastName} ${pkg.student?.firstName} - ${stdPkg.nome}` 
-            : pkg.nome
+          nome: cleanPackageName(stdPkg ? stdPkg.nome : pkg.nome)
         });
         promises.push(packagesAPI.create(payload));
       }
@@ -434,11 +434,11 @@ async function handleSubmit() {
 
     await Promise.all(promises);
     
-    alert(`✅ ${props.packages.length} pacchetti creati con successo!`);
+    toast.success(`${props.packages.length} pacchetti creati con successo!`);
     emit('renewed');
   } catch (error) {
     console.error('Errore rinnovo bulk:', error);
-    alert('❌ Errore durante la creazione dei pacchetti');
+    toast.error('Errore durante la creazione dei pacchetti');
   } finally {
     submitting.value = false;
   }
@@ -448,7 +448,7 @@ function buildPayload(originalPkg, overrides) {
   return {
     studentId: originalPkg.studentId,
     standardPackageId: overrides.standardPackageId || originalPkg.standardPackageId,
-    nome: overrides.nome || originalPkg.nome,
+    nome: cleanPackageName(overrides.nome || originalPkg.nome),
     tipo: originalPkg.tipo,
     dataInizio: new Date(overrides.dataInizio).toISOString(),
     prezzoTotale: parseFloat(overrides.prezzoTotale),
@@ -457,6 +457,16 @@ function buildPayload(originalPkg, overrides) {
     orarioGiornaliero: overrides.orarioGiornaliero || originalPkg.orarioGiornaliero,
     note: `Rinnovo bulk del ${new Date().toLocaleDateString('it-IT')}`
   };
+}
+
+function cleanPackageName(nome) {
+  if (!nome) return '';
+  // Rimuove prefissi del tipo "Nome Cognome - "
+  if (nome.includes(' - ')) {
+    const parts = nome.split(' - ');
+    return parts[parts.length - 1];
+  }
+  return nome;
 }
 
 function getTomorrow() {

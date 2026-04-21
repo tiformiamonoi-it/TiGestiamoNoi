@@ -14,10 +14,10 @@ const getDashboardStats = async (req, res, next) => {
 
     // Calcola date BASE
     const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1, 0, 0, 0, 0);
+    const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59, 999);
 
     // Periodi configurabili
     const periodoTutor = req.query.periodoTutor || 'settimana';
@@ -43,10 +43,43 @@ const getDashboardStats = async (req, res, next) => {
       labelPeriodo = `${nomiMesi[today.getMonth()]} ${today.getFullYear()}`;
     }
 
-    // Calcola date per performance tutor
-    const dataInizioTutor = periodoTutor === 'mese'
-      ? startOfMonth
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    let dataInizioTutor;
+    if (periodoTutor === 'mese') {
+      dataInizioTutor = startOfMonth;
+    } else {
+      const startOfWeek = new Date(today);
+      const dayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1; // Lunedì = 0
+      startOfWeek.setDate(today.getDate() - dayOfWeek);
+      startOfWeek.setHours(0, 0, 0, 0);
+      dataInizioTutor = startOfWeek;
+    }
+
+    // Calcola date per attività
+    const periodoAttivita = req.query.periodoAttivita || 'ieri';
+    console.log('📅 Dashboard Stats - Periodo Attivita:', periodoAttivita);
+    let startAttivita, endAttivita;
+
+    if (periodoAttivita === 'ieri') {
+      const ieriFix = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 0, 0, 0, 0);
+      const ieriEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 23, 59, 59, 999);
+      startAttivita = ieriFix;
+      endAttivita = ieriEnd;
+    } else if (periodoAttivita === 'mese_corrente') {
+      startAttivita = startOfMonth;
+      endAttivita = endOfMonth;
+    } else if (periodoAttivita === 'mese_precedente') {
+      startAttivita = lastMonth;
+      endAttivita = endOfLastMonth;
+    } else if (periodoAttivita === 'anno_corrente') {
+      startAttivita = new Date(today.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endAttivita = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else {
+      const ieriFix = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 0, 0, 0, 0);
+      const ieriEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 23, 59, 59, 999);
+      startAttivita = ieriFix;
+      endAttivita = ieriEnd;
+    }
+    console.log('📅 startAttivita:', startAttivita, '→ endAttivita:', endAttivita);
 
     // 1. Studenti attivi (con pacchetti attivi)
     console.log('👉 1. Calcolo studenti attivi...');
@@ -230,39 +263,99 @@ const getDashboardStats = async (req, res, next) => {
 
     // 5. Azioni prioritarie
     console.log('👉 5. Calcolo azioni prioritarie...');
-    const tuttiPacchetti = await prisma.package.findMany({
+    const packagesForActions = await prisma.package.findMany({
       where: {
         stati: {
-          has: 'ATTIVO',
+          hasSome: ['ATTIVO', 'SCADUTO'],
         },
       },
       select: {
         id: true,
+        nome: true,
+        tipo: true,
         oreAcquistate: true,
         oreResiduo: true,
+        giorniAcquistati: true,
+        giorniResiduo: true,
         importoResiduo: true,
+        dataScadenza: true,
+        stati: true,
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          }
+        }
       },
     });
 
-    const pacchettiDaRinnovare = tuttiPacchetti.filter(
-      (p) => parseFloat(p.oreResiduo) <= parseFloat(p.oreAcquistate) * 0.2
-    ).length;
+    const pacchettiInScadenzaList = [];
+    const pacchettiScadutiList = [];
+    const pagamentiPendentiList = [];
 
-    const pagamentiPendenti = tuttiPacchetti.filter(
-      (p) => parseFloat(p.importoResiduo) > 0
-    ).length;
+    let pacchettiDaRinnovareCount = 0;
+    let pagamentiPendentiCount = 0;
 
-    const studentiDebitoOre = await prisma.package.count({
-      where: {
-        oreResiduo: {
-          lt: 0,
-        },
-      },
-    });
+    for (const p of packagesForActions) {
+      const studentName = p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Sconosciuto';
+      
+      // Pacchetti Scaduti (Solo SCADUTO)
+      if (p.stati.includes('SCADUTO')) {
+        if (pacchettiScadutiList.length < 10) {
+          pacchettiScadutiList.push({
+            studentId: p.student?.id,
+            studentName,
+            packageId: p.id,
+            nome: p.nome,
+            tipo: p.tipo,
+            dataScadenza: p.dataScadenza
+          });
+        }
+      }
 
-    const oreExtraDaGestire = tuttiPacchetti.filter(
-      (p) => parseFloat(p.oreResiduo) > parseFloat(p.oreAcquistate)
-    ).length;
+      // Pacchetti In Scadenza (Solo ATTIVO)
+      if (p.stati.includes('ATTIVO')) {
+        let isScadenza = false;
+        let percentage = 0;
+        
+        if (p.tipo === 'ORE' && p.oreAcquistate) {
+          percentage = (parseFloat(p.oreResiduo) / parseFloat(p.oreAcquistate)) * 100;
+          if (percentage <= 10) isScadenza = true;
+        } else if (p.tipo === 'MENSILE' && p.giorniAcquistati) {
+          percentage = (parseFloat(p.giorniResiduo) / parseFloat(p.giorniAcquistati)) * 100;
+          if (percentage <= 10) isScadenza = true;
+        }
+
+        if (isScadenza) {
+          pacchettiDaRinnovareCount++;
+          if (pacchettiInScadenzaList.length < 10) {
+            pacchettiInScadenzaList.push({
+              studentId: p.student?.id,
+              studentName,
+              packageId: p.id,
+              tipo: p.tipo,
+              percentualeResidua: percentage.toFixed(1),
+              dataScadenza: p.dataScadenza
+            });
+          }
+        }
+
+        // Pagamenti Pendenti
+        if (parseFloat(p.importoResiduo) > 0) {
+          pagamentiPendentiCount++;
+          if (pagamentiPendentiList.length < 10) {
+            pagamentiPendentiList.push({
+              studentId: p.student?.id,
+              studentName,
+              packageId: p.id,
+              importoResiduo: parseFloat(p.importoResiduo).toFixed(2),
+              dataScadenza: p.dataScadenza
+            });
+          }
+        }
+      }
+    }
 
     // 6. Finanze dettagliate
     console.log('👉 6. Calcolo finanze dettagliate...');
@@ -279,22 +372,22 @@ const getDashboardStats = async (req, res, next) => {
 
     const compensiPagati = uscite;
 
-    // 7. Attività di oggi
-    console.log('👉 7. Calcolo attività oggi...');
-    const lezioniOggiList = await prisma.lesson.findMany({
+    // 7. Attività periodo
+    console.log('👉 7. Calcolo attività periodo...');
+    const lezioniPeriodoList = await prisma.lesson.findMany({
       where: {
         data: {
-          gte: startOfToday,
-          lte: endOfToday,
+          gte: startAttivita,
+          lte: endAttivita,
         },
       },
     });
 
-    const oreErogate = lezioniOggiList.length;
-    const oreProgrammate = lezioniOggi;
+    const oreErogate = lezioniPeriodoList.length;
+    const oreProgrammate = oreErogate; // Stessa logica di prima per questo conteggio
 
-    // ✅ CORRETTO: compensoTutor invece di costoTutor
-    const costoTutorOggi = lezioniOggiList.reduce((sum, lesson) => sum + parseFloat(lesson.compensoTutor || 0), 0);
+    // compensoTutor invece di costoTutor
+    const costoTutorOggi = lezioniPeriodoList.reduce((sum, lesson) => sum + parseFloat(lesson.compensoTutor || 0), 0);
 
     const guadagnoStimato = oreErogate * 13.33;
     const margineNetto = guadagnoStimato - costoTutorOggi;
@@ -442,10 +535,11 @@ const getDashboardStats = async (req, res, next) => {
         saldoTrend,
       },
       azioniPrioritarie: {
-        pacchettiDaRinnovare,
-        pagamentiPendenti,
-        studentiDebitoOre,
-        oreExtraDaGestire,
+        pacchettiDaRinnovare: pacchettiDaRinnovareCount,
+        pagamentiPendenti: pagamentiPendentiCount,
+        pacchettiInScadenzaList,
+        pacchettiScadutiList,
+        pagamentiPendentiList
       },
       finanze: {
         periodo: labelPeriodo,

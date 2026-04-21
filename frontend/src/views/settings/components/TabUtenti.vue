@@ -114,6 +114,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { authAPI } from '@/services/api';
 import UserModal from './modals/UserModal.vue';
 
@@ -124,6 +125,7 @@ const selectedUser = ref(null);
 const showResetModal = ref(false);
 const resetUser = ref(null);
 const newPassword = ref('');
+const toast = useToast();
 
 async function loadUsers() {
   loading.value = true;
@@ -167,7 +169,7 @@ async function toggleActive(user) {
     loadUsers();
   } catch (error) {
     console.error('Errore toggle stato:', error);
-    alert('❌ Errore durante l\'aggiornamento');
+    toast.error('Errore durante l\'aggiornamento');
   }
 }
 
@@ -179,19 +181,19 @@ function resetPassword(user) {
 
 async function confirmResetPassword() {
   if (newPassword.value.length < 8) {
-    alert('⚠️ La password deve essere di almeno 8 caratteri');
+    toast.warning('La password deve essere di almeno 8 caratteri');
     return;
   }
 
   try {
     await authAPI.resetPassword(resetUser.value.id, { password: newPassword.value });
-    alert('✅ Password resettata con successo');
+    toast.success('Password resettata con successo');
     showResetModal.value = false;
     resetUser.value = null;
     newPassword.value = '';
   } catch (error) {
     console.error('Errore reset password:', error);
-    alert('❌ Errore durante il reset della password');
+    toast.error('Errore durante il reset della password');
   }
 }
 

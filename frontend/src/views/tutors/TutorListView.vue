@@ -113,6 +113,8 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
+import Swal from 'sweetalert2';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { useTutorStore } from '@/stores/tutor';
@@ -125,6 +127,7 @@ import api from '@/services/api';
 const router = useRouter();
 const tutorStore = useTutorStore();
 const { tutors, stats, filters, pagination } = storeToRefs(tutorStore);
+const toast = useToast();
 
 const selectedIds = ref([]);
 const isPaymentModalOpen = ref(false);
@@ -173,7 +176,7 @@ function openBulkPayment() {
   const validTutors = selectedTutors.filter(t => t.mesiNonPagati && t.mesiNonPagati.length > 0);
   
   if (validTutors.length === 0) {
-    alert('Nessuno dei tutor selezionati ha pagamenti in sospeso per questo periodo.');
+    toast.info('Nessuno dei tutor selezionati ha pagamenti in sospeso per questo periodo.');
     return;
   }
   
@@ -191,9 +194,9 @@ async function handlePaymentConfirm(payload) {
     );
     isPaymentModalOpen.value = false;
     selectedIds.value = []; // Reset selection
-    alert('Pagamenti registrati con successo!');
+    toast.success('Pagamenti registrati con successo!');
   } catch (e) {
-    alert('Errore durante il pagamento: ' + e.message);
+    toast.error('Errore durante il pagamento: ' + e.message);
   }
 }
 
@@ -213,18 +216,18 @@ async function handleTutorSave(tutorData) {
     if (tutorToEdit.value) {
       // Edit existing
       await api.put(`/tutors/${tutorToEdit.value.id}`, tutorData);
-      alert('✅ Tutor aggiornato con successo!');
+      toast.success('Tutor aggiornato con successo!');
     } else {
       // Create new
       await api.post('/tutors', tutorData);
-      alert('✅ Tutor creato con successo!');
+      toast.success('Tutor creato con successo!');
     }
     closeCreateTutorModal();
     tutorStore.fetchTutors();
     tutorStore.fetchStats();
   } catch (e) {
     console.error('Errore salvataggio tutor:', e);
-    alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+    toast.error('Errore: ' + (e.response?.data?.error || e.message));
   }
 }
 
@@ -233,7 +236,17 @@ async function handleToggleActive(tutor) {
   const newState = !tutor.active;
   const action = newState ? 'attivare' : 'disattivare';
   
-  if (!confirm(`Sei sicuro di voler ${action} ${tutor.firstName} ${tutor.lastName}?`)) return;
+  const result = await Swal.fire({
+    title: 'Conferma Azione',
+    text: `Sei sicuro di voler ${action} ${tutor.firstName} ${tutor.lastName}?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#4f46e5',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, procedi',
+    cancelButtonText: 'Annulla'
+  });
+  if (!result.isConfirmed) return;
   
   try {
     await api.put(`/tutors/${tutor.id}`, { active: newState });
@@ -241,23 +254,33 @@ async function handleToggleActive(tutor) {
     tutorStore.fetchStats();
   } catch (e) {
     console.error('Errore toggle stato:', e);
-    alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+    toast.error('Errore: ' + (e.response?.data?.error || e.message));
   }
 }
 
 // Delete Tutor
 async function handleDeleteTutor(tutor) {
-  if (!confirm(`Sei sicuro di voler eliminare ${tutor.firstName} ${tutor.lastName}?\n\nQuesta azione è irreversibile.`)) return;
+  const result = await Swal.fire({
+    title: 'Attenzione!',
+    text: `Sei sicuro di voler eliminare ${tutor.firstName} ${tutor.lastName}? Questa azione è irreversibile.`,
+    icon: 'error',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, elimina',
+    cancelButtonText: 'Annulla'
+  });
+  if (!result.isConfirmed) return;
   
   try {
     await api.delete(`/tutors/${tutor.id}`);
     tutorStore.fetchTutors();
     tutorStore.fetchStats();
-    alert('✅ Tutor eliminato con successo!');
+    toast.success('Tutor eliminato con successo!');
   } catch (e) {
     console.error('Errore eliminazione:', e);
     const errorMsg = e.response?.data?.error || 'Errore durante l\'eliminazione';
-    alert(`❌ ${errorMsg}`);
+    toast.error(`Errore: ${errorMsg}`);
   }
 }
 </script>

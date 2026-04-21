@@ -167,32 +167,7 @@
               ></textarea>
             </div>
 
-            <div v-if="oreNegativeTotali < 0" class="alert-ore-negative">
-                <div class="alert-header">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                  </svg>
-                  <span>Ore in negativo rilevate</span>
-                </div>
-                <p class="alert-message">
-                  Lo studente ha <strong>{{ Math.abs(oreNegativeTotali).toFixed(1) }}h in negativo</strong> da altri pacchetti.
-                </p>
-                
-                <label class="checkbox-recupero">
-                  <input v-model="form.recuperaOreNegative" type="checkbox" />
-                  <span>Recupera ore negative nel nuovo pacchetto</span>
-                </label>
-                
-                <div v-if="form.recuperaOreNegative" class="recovery-info">
-                  <p>
-                    ✅ Il nuovo pacchetto inizierà con <strong>{{ oreEffettiveIniziali.toFixed(1) }}h</strong> disponibili
-                    <br>
-                    <small>({{ selectedStandardPackage?.oreIncluse || 0 }}h pacchetto - {{ Math.abs(oreNegativeTotali).toFixed(1) }}h negative)</small>
-                  </p>
-                </div>
-              </div>
+
 
             <!-- Riepilogo -->
             <div v-if="selectedStandardPackage" class="summary">
@@ -254,6 +229,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import { packagesAPI, standardPackagesAPI, studentsAPI } from '@/services/api';
 
 // ========================================
@@ -279,11 +255,11 @@ const emit = defineEmits(['close', 'renewed']);
 // ========================================
 
 const submitting = ref(false);
+const toast = useToast();
 const loadingStandardPackages = ref(false);
 const loadingOreNegative = ref(false);
 const standardPackages = ref([]);
 const selectedStandardPackage = ref(null);
-const oreNegativeTotali = ref(0); // ✅ NUOVO
 
 const form = ref({
   dataInizio: '',
@@ -293,7 +269,6 @@ const form = ref({
   metodoPagamento: 'CONTANTI',
   richiedeFattura: false,
   note: '',
-  recuperaOreNegative: false // ✅ NUOVO
 });
 
 // ========================================
@@ -343,23 +318,6 @@ const residuoDopoPagamento = computed(() => {
   return Math.max(0, form.value.prezzoTotale - form.value.importoPagamento);
 });
 
-// ✅ NUOVO: Ore effettive che avrà il pacchetto dopo recupero
-const oreEffettiveIniziali = computed(() => {
-  if (!selectedStandardPackage.value) return 0;
-  
-  let oreBase = parseFloat(selectedStandardPackage.value.oreIncluse || 0);
-  
-  if (selectedStandardPackage.value.tipo === 'MENSILE') {
-    oreBase = parseFloat(selectedStandardPackage.value.giorniInclusi) * 
-              parseFloat(selectedStandardPackage.value.orarioGiornaliero);
-  }
-  
-  if (form.value.recuperaOreNegative) {
-    return oreBase + oreNegativeTotali.value; // Somma algebrica (oreNegative è negativo)
-  }
-  
-  return oreBase;
-});
 
 // ========================================
 // WATCHERS
@@ -398,7 +356,7 @@ const loadStandardPackages = async () => {
     standardPackages.value = response.data.packages || [];
   } catch (error) {
     console.error('Errore caricamento pacchetti standard:', error);
-    alert('❌ Errore durante il caricamento dei pacchetti');
+    toast.error('Errore durante il caricamento dei pacchetti');
   } finally {
     loadingStandardPackages.value = false;
   }
@@ -426,52 +384,31 @@ const dataScadenzaCalcolata = computed(() => {
 });
 
 // ✅ NUOVO: Carica ore negative dello studente
-const loadOreNegative = async () => {
-  loadingOreNegative.value = true;
-  try {
-    const response = await studentsAPI.getById(props.student.id);
-    const pacchetti = response.data.student?.pacchetti || [];
-    
-    // Calcola totale ore negative
-    const totale = pacchetti.reduce((sum, pkg) => {
-      const oreResiduo = parseFloat(pkg.oreResiduo || 0);
-      if (oreResiduo < 0) {
-        return sum + oreResiduo;
-      }
-      return sum;
-    }, 0);
-    
-    oreNegativeTotali.value = totale;
-  } catch (error) {
-    console.error('Errore caricamento ore negative:', error);
-  } finally {
-    loadingOreNegative.value = false;
-  }
-};
+
 
 const handleSubmit = async () => {
   if (!selectedStandardPackage.value) {
-    alert('⚠️ Seleziona un pacchetto');
+    toast.warning('Seleziona un pacchetto');
     return;
   }
 
   if (!form.value.dataInizio) {
-    alert('⚠️ Seleziona la data di inizio');
+    toast.warning('⚠️ Seleziona la data di inizio');
     return;
   }
 
   if (!form.value.prezzoTotale || form.value.prezzoTotale <= 0) {
-    alert('⚠️ Inserisci un prezzo valido');
+    toast.warning('⚠️ Inserisci un prezzo valido');
     return;
   }
 
   if (form.value.registraPagamentoImmediato) {
     if (!form.value.importoPagamento || form.value.importoPagamento <= 0) {
-      alert('⚠️ Inserisci un importo pagamento valido');
+      toast.warning('⚠️ Inserisci un importo pagamento valido');
       return;
     }
     if (form.value.importoPagamento > form.value.prezzoTotale) {
-      alert('⚠️ L\'importo non può superare il prezzo totale');
+      toast.warning('⚠️ L\'importo non può superare il prezzo totale');
       return;
     }
   }
@@ -480,8 +417,7 @@ const handleSubmit = async () => {
 
   try {
     const pkg = selectedStandardPackage.value;
-    const studentName = `${props.student.firstName} ${props.student.lastName}`;
-    const nomePacchetto = `${studentName} - ${pkg.nome}`;
+    const nomePacchetto = pkg.nome;
 
     // Payload base
     const payload = {
@@ -492,7 +428,6 @@ const handleSubmit = async () => {
       dataInizio: new Date(form.value.dataInizio).toISOString(),
       prezzoTotale: parseFloat(form.value.prezzoTotale),
       note: form.value.note || null,
-      recuperaOreNegative: form.value.recuperaOreNegative // ✅ NUOVO
     };
 
     // Campi specifici per tipo
@@ -524,12 +459,12 @@ const handleSubmit = async () => {
 
     await packagesAPI.create(payload);
     
-    alert('✅ Pacchetto creato con successo!');
+    toast.success('Pacchetto creato con successo!');
     emit('renewed');
     emit('close');
   } catch (error) {
     console.error('Errore creazione pacchetto:', error);
-    alert('❌ Errore durante la creazione del pacchetto');
+    toast.error('Errore durante la creazione del pacchetto');
   } finally {
     submitting.value = false;
   }
@@ -541,7 +476,6 @@ const handleSubmit = async () => {
 
 onMounted(async () => {
   await loadStandardPackages();
-  await loadOreNegative(); // ✅ NUOVO
 
   // Se c'è un pacchetto precedente, imposta data dopo scadenza
   if (props.packageData?.dataScadenza) {

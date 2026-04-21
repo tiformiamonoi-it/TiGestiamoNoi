@@ -64,6 +64,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { authAPI } from '@/services/api';
 
 const props = defineProps({
@@ -88,6 +89,7 @@ const form = ref({
 });
 
 const submitting = ref(false);
+const toast = useToast();
 
 async function handleSubmit() {
   submitting.value = true;
@@ -116,7 +118,7 @@ async function handleSubmit() {
   } catch (error) {
     console.error('Errore salvataggio utente:', error);
     const message = error.response?.data?.error || 'Errore durante il salvataggio';
-    alert(`❌ ${message}`);
+    toast.error(message);
   } finally {
     submitting.value = false;
   }

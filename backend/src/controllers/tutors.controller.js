@@ -16,6 +16,7 @@ const getTutors = async (req, res, next) => {
       stato, // 'attivo', 'inattivo', 'disattivato'
       periodo, // JSON string: { tipo: 'mese'|'anno', mese: 1-12, anno: 2025 }
       conPagamentiSospesi,
+      lite, // NEW: se true, salta il calcolo delle stats e filtri pesanti
       page = 1,
       limit = 50,
     } = req.query;
@@ -77,19 +78,23 @@ const getTutors = async (req, res, next) => {
       }
     }
 
-    // Arricchisci tutor con dati calcolati (mesi non pagati, ecc.)
-    const enrichedTutors = await Promise.all(tutors.map(async (tutor) => {
-      const stats = await calcolaStatsTutor(tutor.id, periodoObj);
-      return {
-        ...tutor,
-        ...stats,
-      };
-    }));
+    // Arricchisci tutor con dati calcolati (mesi non pagati, ecc.) solo se lite non è true
+    let result = tutors;
 
-    // Filtro post-calcolo per pagamenti sospesi
-    let result = enrichedTutors;
-    if (conPagamentiSospesi === 'true') {
-      result = result.filter(t => t.mesiNonPagati.length > 0);
+    if (lite !== 'true') {
+      const enrichedTutors = await Promise.all(tutors.map(async (tutor) => {
+        const stats = await calcolaStatsTutor(tutor.id, periodoObj);
+        return {
+          ...tutor,
+          ...stats,
+        };
+      }));
+      result = enrichedTutors;
+
+      // Filtro post-calcolo per pagamenti sospesi
+      if (conPagamentiSospesi === 'true') {
+        result = result.filter(t => t.mesiNonPagati && t.mesiNonPagati.length > 0);
+      }
     }
 
     res.json({
@@ -291,9 +296,6 @@ const payTutors = async (req, res, next) => {
           const d = new Date(meseStr);
           const meseDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
 
-          // Calcola importo dovuto per quel mese (sicurezza/default)
-          const compenso = await calcolaCompensoMese(tx, tutorId, meseDate);
-
           // Determine final amount and status
           let finalImporto;
           let status;
@@ -304,7 +306,13 @@ const payTutors = async (req, res, next) => {
             status = 'PRO_BONO';
           } else {
             // Normal payment
-            finalImporto = importoOverride !== undefined ? parseFloat(importoOverride) : compenso.totaleArrotondato;
+            if (importoOverride !== undefined) {
+              finalImporto = parseFloat(importoOverride);
+            } else {
+              // Calcola importo dovuto per quel mese (sicurezza/default)
+              const compenso = await calcolaCompensoMese(tx, tutorId, meseDate);
+              finalImporto = compenso.totaleArrotondato;
+            }
             status = statusOverride || 'PAGATO';
           }
 
@@ -367,39 +375,31 @@ const updatePayment = async (req, res, next) => {
     let newStatus = status || 'PAGATO';
     if (proBono) newStatus = 'PRO_BONO';
 
+    // Build update data
+    const updateData = {
+      importo: proBono ? 0 : parseFloat(importo),
+      note,
+      status: newStatus,
+    };
+
+    // Handle accounting entry update/delete logic
+    if (newStatus === 'PRO_BONO') {
+      updateData.movimentoContabile = {
+        delete: true
+      };
+    } else {
+      updateData.movimentoContabile = {
+        update: {
+          importo: parseFloat(importo),
+        }
+      };
+    }
+
     const payment = await prisma.tutorPayment.update({
       where: { id },
-      data: {
-        importo: parseFloat(importo),
-        note,
-        status: newStatus,
-        // Update associated accounting entry if exists
-        movimentoContabile: {
-          update: {
-            importo: parseFloat(importo),
-            // If pro-bono, maybe set importo to 0 in accounting too? 
-            // Usually Pro Bono means 0 cost.
-          }
-        }
-      },
+      data: updateData,
       include: { movimentoContabile: true }
     });
-
-    // If Pro Bono, ensure importo is 0? Or keep tracked amount but status PRO_BONO?
-    // User said "Pro Bono (0€ - non in contabilità)".
-    // If Pro Bono, we should probably DELETE the accounting entry or set it to 0.
-    if (newStatus === 'PRO_BONO') {
-      // Set importo to 0
-      await prisma.tutorPayment.update({
-        where: { id },
-        data: {
-          importo: 0,
-          movimentoContabile: {
-            delete: true // Remove from accounting
-          }
-        }
-      });
-    }
 
     res.json(payment);
   } catch (error) {
@@ -665,70 +665,65 @@ const TARIFFE = {
 async function calcolaStatsTutor(tutorId, periodo) {
   const { start, end } = getDateRange(periodo);
 
-  // 1. Check lezioni nel periodo (per stato Attivo)
-  const lezioniCount = await prisma.lesson.count({
-    where: {
-      tutorId,
-      data: { gte: start, lte: end },
-    },
-  });
+  // 1. Esegui due sole query per recuperare TUTTE le lezioni e TUTTI i pagamenti del tutor
+  const [allLessons, allPayments] = await Promise.all([
+    prisma.lesson.findMany({
+      where: { tutorId },
+      orderBy: { data: 'asc' },
+      select: { data: true, compensoTutor: true }
+    }),
+    prisma.tutorPayment.findMany({
+      where: { tutorId }
+    })
+  ]);
 
-  // 2. Calcola TUTTI i mesi non pagati (da prima lezione tutor a oggi)
-  // Trova la prima lezione del tutor
-  const firstLesson = await prisma.lesson.findFirst({
-    where: { tutorId },
-    orderBy: { data: 'asc' },
-    select: { data: true }
-  });
+  const hasLezioniInPeriod = allLessons.some(l => l.data >= start && l.data <= end);
 
   const mesiNonPagati = [];
   let totaleDovuto = 0;
 
-  if (firstLesson) {
-    // Genera lista mesi dalla prima lezione fino al mese corrente (incluso)
+  if (allLessons.length > 0) {
+    const firstLessonData = allLessons[0].data;
     const now = new Date();
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const current = new Date(firstLessonData.getFullYear(), firstLessonData.getMonth(), 1);
 
-    // Start from first lesson month
-    const current = new Date(firstLesson.data.getFullYear(), firstLesson.data.getMonth(), 1);
+    // Raggruppa lezioni e pagamenti per mese (stringa ISO per UTC)
+    const lessonsByMonth = {};
+    for (const l of allLessons) {
+      const m = new Date(Date.UTC(l.data.getFullYear(), l.data.getMonth(), 1)).toISOString();
+      if (!lessonsByMonth[m]) lessonsByMonth[m] = 0;
+      lessonsByMonth[m] += parseFloat(l.compensoTutor || 0);
+    }
 
-    // Itera tutti i mesi fino al mese corrente (incluso)
+    const paymentsByMonth = {};
+    for (const p of allPayments) {
+      const m = new Date(p.mese).toISOString(); // p.mese is UTC 1st day of month
+      if (!paymentsByMonth[m]) paymentsByMonth[m] = [];
+      paymentsByMonth[m].push(p);
+    }
+
     while (current <= currentMonthStart) {
-      const meseStart = new Date(current.getFullYear(), current.getMonth(), 1);
+      const currentUTC = new Date(Date.UTC(current.getFullYear(), current.getMonth(), 1));
+      const monthKey = currentUTC.toISOString();
 
-      // Calcola compenso mese
-      const compenso = await calcolaCompensoMese(prisma, tutorId, meseStart);
+      const totaleGrezzo = lessonsByMonth[monthKey] || 0;
+      const totaleArrotondato = Math.floor(totaleGrezzo);
 
-      // Check se pagato (UTC comparison)
-      const meseStartUTC = new Date(Date.UTC(meseStart.getFullYear(), meseStart.getMonth(), 1));
+      const paymentsForMonth = paymentsByMonth[monthKey] || [];
+      const hasProBono = paymentsForMonth.some(p => p.status === 'PRO_BONO');
 
-      // Fetch all payments for this month (UTC)
-      const payments = await prisma.tutorPayment.findMany({
-        where: {
-          tutorId,
-          mese: meseStartUTC,
-        },
-      });
+      if (!hasProBono) {
+        const totalePagato = paymentsForMonth.reduce((sum, p) => sum + Number(p.importo), 0);
+        const rimanente = totaleArrotondato - totalePagato;
 
-      // Check if there's a Pro Bono payment - if so, month is considered fully paid
-      const hasProBono = payments.some(p => p.status === 'PRO_BONO');
-
-      if (hasProBono) {
-        // Pro Bono = fully covered, don't add to unpaid list
-        current.setMonth(current.getMonth() + 1);
-        continue;
-      }
-
-      const totalePagato = payments.reduce((sum, p) => sum + Number(p.importo), 0);
-      const rimanente = compenso.totaleArrotondato - totalePagato;
-
-      // If there is a remaining amount AND there were lessons this month, add to unpaid list
-      if (rimanente > 0.01 && compenso.totaleArrotondato > 0) {
-        mesiNonPagati.push({
-          date: meseStartUTC,
-          importo: rimanente
-        });
-        totaleDovuto += rimanente;
+        if (rimanente > 0.01 && totaleArrotondato > 0) {
+          mesiNonPagati.push({
+            date: currentUTC,
+            importo: rimanente
+          });
+          totaleDovuto += rimanente;
+        }
       }
 
       current.setMonth(current.getMonth() + 1);
@@ -736,7 +731,7 @@ async function calcolaStatsTutor(tutorId, periodo) {
   }
 
   return {
-    hasLezioniInPeriod: lezioniCount > 0,
+    hasLezioniInPeriod,
     mesiNonPagati,
     totaleDovuto,
   };
@@ -751,20 +746,14 @@ async function calcolaCompensoMese(tx, tutorId, meseDate) {
       tutorId,
       data: { gte: start, lte: end },
     },
-    include: { lessonStudents: true },
+    select: { compensoTutor: true }
   });
 
   let totaleGrezzo = 0;
 
-  // Logica calcolo (semplificata basata su tipo lezione salvato)
-  // TODO: Affinare se servono dettagli ore singole/gruppo specifici per UI
   for (const lezione of lezioni) {
-    // Usa compenso salvato se esiste, altrimenti ricalcola (fallback)
     if (lezione.compensoTutor) {
       totaleGrezzo += parseFloat(lezione.compensoTutor);
-    } else {
-      // Fallback calcolo al volo
-      // ... logica complessa lessonCalculations.js ...
     }
   }
 

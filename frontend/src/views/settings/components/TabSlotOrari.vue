@@ -108,12 +108,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { timeslotsAPI } from '@/services/api';
 
 const slots = ref([]);
 const loading = ref(false);
 const showAddModal = ref(false);
 const saving = ref(false);
+const toast = useToast();
 
 const newSlot = ref({
   oraInizio: '14:00',
@@ -149,7 +151,7 @@ async function createSlot() {
   } catch (error) {
     console.error('Errore creazione slot:', error);
     const message = error.response?.data?.error || 'Errore durante la creazione';
-    alert(`❌ ${message}`);
+    toast.error(message);
   } finally {
     saving.value = false;
   }
@@ -161,7 +163,7 @@ async function toggleSlot(slot) {
     loadSlots();
   } catch (error) {
     console.error('Errore toggle slot:', error);
-    alert('❌ Errore durante l\'aggiornamento');
+    toast.error('Errore durante l\'aggiornamento');
   }
 }
 
@@ -173,7 +175,7 @@ async function deleteSlot(slot) {
     loadSlots();
   } catch (error) {
     console.error('Errore eliminazione slot:', error);
-    alert('❌ Errore durante l\'eliminazione');
+    toast.error('Errore durante l\'eliminazione');
   }
 }
 

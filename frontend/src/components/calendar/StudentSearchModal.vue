@@ -55,6 +55,14 @@
                 ✓ Già aggiunto
               </span>
               
+              <!-- Badge pacchetto scaduto -->
+              <span
+                v-else-if="isStudentChiuso(student) && student._hasScadutoDaPagare"
+                class="badge-chiuso"
+              >
+                Pacchetto Scaduto
+              </span>
+              
               <!-- Badge pacchetto chiuso -->
               <span
                 v-else-if="isStudentChiuso(student)"
@@ -116,6 +124,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { calendarAPI } from '@/services/api';
 
 // ========================================
@@ -139,6 +148,7 @@ const loading = ref(false);
 const students = ref([]);
 const searchQuery = ref('');
 const selectedStudents = ref(new Set());
+const toast = useToast();
 
 // ========================================
 // COMPUTED
@@ -166,7 +176,7 @@ const loadStudents = async () => {
     students.value = response.data.students || [];
   } catch (error) {
     console.error('Errore caricamento studenti:', error);
-    alert('Errore durante il caricamento degli studenti');
+    toast.error('Errore durante il caricamento degli studenti');
   } finally {
     loading.value = false;
   }

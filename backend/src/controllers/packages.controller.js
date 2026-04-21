@@ -13,14 +13,13 @@ const { calcolaScadenzaPacchetto } = require('../utils/dateHelpers'); // ✅ NUO
  */
 const getPackages = async (req, res, next) => {
   try {
-    const { studentId, stati, tipo, page = 1, limit = 20 } = req.query;
+    const { studentId, stati, tipo, page = 1, limit = 20, latestOnly } = req.query;
     const skip = (page - 1) * limit;
 
     const where = {};
     if (studentId) where.studentId = studentId;
     if (tipo) where.tipo = tipo;
     if (stati) {
-      // Filtra per stati (può essere array: "ATTIVO,SCADUTO")
       const statiArray = stati.split(',');
       where.stati = { hasSome: statiArray };
     }
@@ -73,26 +72,19 @@ const getPackages = async (req, res, next) => {
     // ✅ LAZY UPDATE + CALCOLO DINAMICO GIORNI PER MENSILI
     await Promise.all(packages.map(async (pkg) => {
       try {
-        const updatedPkg = await updatePackageStates(pkg.id);
-        // Aggiorniamo l'oggetto in memoria per la risposta
+        const updatedPkg = await updatePackageStates(pkg);
         pkg.stati = updatedPkg.stati;
         pkg.oreResiduo = updatedPkg.oreResiduo;
         pkg.orePerse = updatedPkg.orePerse;
 
-        // ✅ FIX: Calcolo dinamico giorniResiduo per pacchetti MENSILI
-        // (stessa logica di students.controller.js)
         if (pkg.tipo === 'MENSILE') {
           const giorniTotali = pkg.giorniAcquistati || 0;
-
-          // Conta giorni UNICI con lezioni
           const dateUniche = new Set(
             (pkg.lessonStudents || []).map(ls =>
               ls.lesson.data.toISOString().split('T')[0]
             )
           );
           const giorniUsati = dateUniche.size;
-
-          // Calcola residuo dinamico
           pkg.giorniResiduo = Math.max(0, giorniTotali - giorniUsati);
           pkg.giorniUsati = giorniUsati;
           pkg.giorniTotali = giorniTotali;
@@ -100,7 +92,6 @@ const getPackages = async (req, res, next) => {
           pkg.giorniResiduo = updatedPkg.giorniResiduo;
         }
 
-        // Rimuovi lessonStudents dalla risposta (non serve al frontend)
         delete pkg.lessonStudents;
 
       } catch (e) {
@@ -108,13 +99,26 @@ const getPackages = async (req, res, next) => {
       }
     }));
 
+    // ✅ Se latestOnly=true: teniamo solo il pacchetto più recente per ogni studente
+    let finalPackages = packages;
+    if (latestOnly === 'true') {
+      const byStudent = new Map();
+      for (const pkg of packages) {
+        const sid = pkg.studentId;
+        if (!byStudent.has(sid)) {
+          byStudent.set(sid, pkg); // già ordinato per createdAt desc
+        }
+      }
+      finalPackages = Array.from(byStudent.values());
+    }
+
     res.json({
-      packages,
+      packages: finalPackages,
       pagination: {
-        total,
+        total: latestOnly === 'true' ? finalPackages.length : total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil((latestOnly === 'true' ? finalPackages.length : total) / limit),
       },
     });
   } catch (error) {
@@ -196,35 +200,25 @@ const createPackage = async (req, res, next) => {
       dataInizio,
       note,
       pagamentoIniziale, // Opzionale
-      recuperaOreNegative = false // ✅ NUOVO: recupera ore negative da altri pacchetti
     } = req.body;
 
-    // ✅ NUOVO: Verifica se ci sono pacchetti con ore negative
-    let oreNegativeDaRecuperare = 0;
-    let pacchettiDaAzzerare = [];
-
-    if (recuperaOreNegative) {
-      const pacchettiNegativi = await prisma.package.findMany({
-        where: {
-          studentId,
-          oreResiduo: { lt: 0 }
-        }
-      });
-
-      if (pacchettiNegativi.length > 0) {
-        oreNegativeDaRecuperare = pacchettiNegativi.reduce(
-          (sum, p) => sum + parseFloat(p.oreResiduo),
-          0
-        );
-        pacchettiDaAzzerare = pacchettiNegativi.map(p => p.id);
-      }
+    // ✅ NUOVO: Validazione standardPackageId e oreAcquistate
+    if (standardPackageId) {
+      const sp = await prisma.standardPackage.findUnique({ where: { id: standardPackageId } });
+      if (!sp) return res.status(400).json({ error: 'Pacchetto standard non trovato' });
     }
+
+    if (parseFloat(oreAcquistate) <= 0) {
+      return res.status(400).json({ error: 'Le ore acquistate devono essere maggiori di zero' });
+    }
+
+
 
     // ✅ NUOVO: Calcola automaticamente dataScadenza in base al tipo
     const dataScadenza = calcolaScadenzaPacchetto(dataInizio, tipo);
 
-    // Calcola ore residuo iniziale (con eventuale recupero ore negative)
-    const oreResiduoIniziale = parseFloat(oreAcquistate) + oreNegativeDaRecuperare;
+    // Calcola ore residuo iniziale
+    const oreResiduoIniziale = parseFloat(oreAcquistate);
 
     // Prepara dati pacchetto
     const packageData = {
@@ -233,7 +227,7 @@ const createPackage = async (req, res, next) => {
       nome,
       tipo,
       oreAcquistate: parseFloat(oreAcquistate),
-      oreResiduo: oreResiduoIniziale, // ✅ Può partire da negativo se recupera
+      oreResiduo: oreResiduoIniziale,
       orePerse: 0,
       prezzoTotale: parseFloat(prezzoTotale),
       importoPagato: 0,
@@ -285,18 +279,7 @@ const createPackage = async (req, res, next) => {
         });
       }
 
-      // 3. ✅ NUOVO: Azzera ore negative nei vecchi pacchetti
-      if (pacchettiDaAzzerare.length > 0) {
-        await tx.package.updateMany({
-          where: { id: { in: pacchettiDaAzzerare } },
-          data: { oreResiduo: 0 }
-        });
 
-        // Ricalcola stati dei pacchetti azzerati
-        for (const pkgId of pacchettiDaAzzerare) {
-          await updatePackageStates(pkgId);
-        }
-      }
 
       return pkg;
     });
@@ -429,8 +412,25 @@ const updatePackage = async (req, res, next) => {
     // Campi specifici MENSILE
     if (tipo === 'MENSILE') {
       updateData.giorniAcquistati = parseInt(giorniAcquistati);
-      updateData.giorniResiduo = nuovoGiorniResiduo;
       updateData.orarioGiornaliero = parseFloat(orarioGiornaliero);
+      
+      // ✅ NUOVO: Se il tipo è cambiato da ORE a MENSILE, calcola giorni residui
+      if (existingPackage.tipo === 'ORE') {
+        const lessonStudents = await prisma.lessonStudent.findMany({
+          where: { packageId: id },
+          include: { lesson: { select: { data: true } } }
+        });
+        const dateUniche = new Set(lessonStudents.map(ls => ls.lesson.data.toISOString().split('T')[0]));
+        const giorniUsati = dateUniche.size;
+        updateData.giorniResiduo = Math.max(0, parseInt(giorniAcquistati) - giorniUsati);
+      } else {
+        updateData.giorniResiduo = nuovoGiorniResiduo;
+      }
+    } else {
+      // ✅ NUOVO: Se il tipo è cambiato da MENSILE a ORE, azzera campi giorni
+      updateData.giorniAcquistati = null;
+      updateData.giorniResiduo = null;
+      updateData.orarioGiornaliero = null;
     }
 
     // Aggiorna pacchetto
@@ -510,26 +510,39 @@ const deletePackage = async (req, res, next) => {
 
     // ✅ STEP 3: Elimina tutto in transazione (atomicità garantita)
     await prisma.$transaction(async (tx) => {
-      // 1. Elimina AccountingEntry collegate ai pagamenti
+      // 1. Blocca se ci sono pagamenti
       if (paymentCount > 0) {
         throw new Error('Impossibile eliminare un pacchetto con pagamenti associati. Elimina prima i pagamenti.');
       }
 
-      // 2. Elimina tutte le LessonStudent associate (non più Lesson diretta)
+      // 2. Gestione lezioni associate
       if (lessonCount > 0) {
+        // Trova le lezioni coinvolte prima di eliminare i collegamenti
+        const lessonStudents = await tx.lessonStudent.findMany({
+          where: { packageId: id },
+          select: { lessonId: true }
+        });
+        const lessonIds = [...new Set(lessonStudents.map(ls => ls.lessonId))];
+
+        // Elimina i collegamenti studente-lezione
         await tx.lessonStudent.deleteMany({
           where: { packageId: id },
         });
+
+        // Elimina le lezioni che sono rimaste senza studenti
+        for (const lessonId of lessonIds) {
+          const remainingStudents = await tx.lessonStudent.count({
+            where: { lessonId }
+          });
+          if (remainingStudents === 0) {
+            await tx.lesson.delete({
+              where: { id: lessonId }
+            });
+          }
+        }
       }
 
-      // 3. Elimina tutti i pagamenti
-      if (paymentCount > 0) {
-        await tx.payment.deleteMany({
-          where: { packageId: id },
-        });
-      }
-
-      // 4. Elimina il pacchetto
+      // 3. Elimina il pacchetto
       await tx.package.delete({
         where: { id },
       });

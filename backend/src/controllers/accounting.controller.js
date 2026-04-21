@@ -342,6 +342,14 @@ const createMovimento = async (req, res, next) => {
             return res.status(400).json({ error: 'tipo, importo e descrizione sono obbligatori' });
         }
 
+        // ✅ NUOVO: Validazione tipo e importo
+        if (!['ENTRATA', 'USCITA', 'NOTA'].includes(tipo.toUpperCase())) {
+            return res.status(400).json({ error: 'Tipo movimento non valido. Valori ammessi: ENTRATA, USCITA, NOTA' });
+        }
+        if (parseFloat(importo) <= 0) {
+            return res.status(400).json({ error: 'L\'importo deve essere maggiore di zero' });
+        }
+
         const movimento = await prisma.accountingEntry.create({
             data: {
                 tipo: tipo.toUpperCase(),
@@ -386,10 +394,16 @@ const updateMovimento = async (req, res, next) => {
         // Verifica se è un movimento automatico
         const isAutomatic = existing.paymentId || existing.tutorPaymentId;
 
-        // Per movimenti automatici, blocca modifica importo (non si può modificare importo pacchetto da qui)
+        // Per movimenti automatici, blocca modifica importo e tipo
         if (isAutomatic && importo && parseFloat(importo) !== parseFloat(existing.importo)) {
             return res.status(403).json({
                 error: 'Non è possibile modificare l\'importo di un pagamento pacchetto dalla contabilità. Modifica il pagamento dalla scheda alunno.'
+            });
+        }
+
+        if (isAutomatic && tipo && tipo.toUpperCase() !== existing.tipo) {
+            return res.status(403).json({
+                error: 'Non è possibile modificare il tipo di un movimento automatico'
             });
         }
 

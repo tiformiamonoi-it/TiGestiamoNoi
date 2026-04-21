@@ -19,7 +19,6 @@ const getStudents = async (req, res, next) => {
       scuola,
       stato,
       pacchetto,
-      oreNegative,
       pagamentoSospeso
     } = req.query;
 
@@ -134,14 +133,21 @@ const getStudents = async (req, res, next) => {
 
     // Formatta e FILTRA studenti
     let studentsFormatted = students.map((student) => {
-      // ✅ FIX: Se c'è un filtro tipo pacchetto, trova il pacchetto più recente di quel tipo
+      // ✅ FIX: Seleziona il pacchetto ATTIVO più vecchio (per rispettare la logica di consumo)
+      // I pacchetti sono ordinati per createdAt DESC, quindi il più vecchio è l'ultimo
       let pacchettoAttivo;
-      if (pacchetto === 'mensile') {
-        pacchettoAttivo = student.pacchetti.find(p => p.tipo === 'MENSILE') || null;
-      } else if (pacchetto === 'orario') {
-        pacchettoAttivo = student.pacchetti.find(p => p.tipo === 'ORE') || null;
+      const pacchettiFiltrati = pacchetto === 'mensile' 
+        ? student.pacchetti.filter(p => p.tipo === 'MENSILE')
+        : (pacchetto === 'orario' ? student.pacchetti.filter(p => p.tipo === 'ORE') : student.pacchetti);
+
+      const activePackages = pacchettiFiltrati.filter(p => p.stati.includes('ATTIVO'));
+      
+      if (activePackages.length > 0) {
+        // Prendi il più vecchio tra quelli attivi (l'ultimo della lista)
+        pacchettoAttivo = activePackages[activePackages.length - 1];
       } else {
-        pacchettoAttivo = student.pacchetti[0] || null;
+        // Fallback: il più recente in assoluto del tipo richiesto
+        pacchettoAttivo = pacchettiFiltrati[0] || null;
       }
 
       // ✅ Controlla se QUALCHE pacchetto è SCADUTO + DA_PAGARE
@@ -240,16 +246,7 @@ const getStudents = async (req, res, next) => {
       studentsFormatted = studentsFormatted.filter(s => s.pacchettoAttivo !== null);
     }
 
-    // Filtro ORE NEGATIVE
-    if (oreNegative === 'true') {
-      studentsFormatted = studentsFormatted.filter(s => {
-        if (!s.pacchettoAttivo) return false;
-        const residuo = s.pacchettoAttivo.tipo === 'MENSILE'
-          ? s.pacchettoAttivo.giorniResiduo
-          : s.pacchettoAttivo.oreResiduo;
-        return residuo < 0;
-      });
-    }
+
 
     // Filtro PAGAMENTO SOSPESO
     if (pagamentoSospeso === 'true') {
@@ -288,7 +285,7 @@ const getStudents = async (req, res, next) => {
         // Mappa stati (con esclusioni per Pagato)
         if (stato === 'attivo' && !isScaduto && !isEsaurito && quantitaResidua > 0 && !isPagato) return true;
         if (stato === 'scaduto' && isScaduto && !isPagato) return true;
-        if (stato === 'ore_negative' && quantitaResidua < 0) return true;
+
         if (stato === 'in_scadenza' && isInScadenza && !isScaduto && !isPagato) return true;
         if (stato === 'esaurito' && isEsaurito && !isPagato) return true;
 
@@ -389,8 +386,22 @@ const createStudent = async (req, res, next) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
+    // Whitelist campi ammessi
+    const {
+      firstName, lastName, parentName, parentPhone, parentEmail,
+      parentIndirizzo, parentCitta, parentCap, parentCF, parentPIva,
+      studentPhone, studentEmail, scuola, classe, note, referral,
+      bisogniSpeciali, active
+    } = req.body;
+
     const student = await prisma.student.create({
-      data: req.body,
+      data: {
+        firstName, lastName, parentName, parentPhone, parentEmail,
+        parentIndirizzo, parentCitta, parentCap, parentCF, parentPIva,
+        studentPhone, studentEmail, scuola, classe, note, referral,
+        bisogniSpeciali,
+        active: active !== undefined ? active : true
+      },
     });
 
     res.status(201).json({
@@ -416,9 +427,22 @@ const updateStudent = async (req, res, next) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
+    // Whitelist campi ammessi (esclude active, gestito da deleteStudent)
+    const {
+      firstName, lastName, parentName, parentPhone, parentEmail,
+      parentIndirizzo, parentCitta, parentCap, parentCF, parentPIva,
+      studentPhone, studentEmail, scuola, classe, note, referral,
+      bisogniSpeciali
+    } = req.body;
+
     const student = await prisma.student.update({
       where: { id },
-      data: req.body,
+      data: {
+        firstName, lastName, parentName, parentPhone, parentEmail,
+        parentIndirizzo, parentCitta, parentCap, parentCF, parentPIva,
+        studentPhone, studentEmail, scuola, classe, note, referral,
+        bisogniSpeciali
+      },
     });
 
     res.json({
@@ -756,8 +780,16 @@ const getAnnualPayments = async (req, res, next) => {
 
     // Get all students with their packages and payments for the given year
     const students = await prisma.student.findMany({
+      where: { active: true },
       include: {
         pacchetti: {
+          where: {
+            OR: [
+              { dataScadenza: { gte: new Date(yearNum, 0, 1) } },
+              { dataScadenza: null }
+            ],
+            dataInizio: { lte: new Date(yearNum, 11, 31, 23, 59, 59) }
+          },
           include: {
             pagamenti: true
           }
@@ -780,7 +812,7 @@ const getAnnualPayments = async (req, res, next) => {
         // Find packages active in this month
         const activePackages = student.pacchetti.filter(pkg => {
           const pkgStart = new Date(pkg.dataInizio);
-          const pkgEnd = pkg.dataFine ? new Date(pkg.dataFine) : null;
+          const pkgEnd = pkg.dataScadenza ? new Date(pkg.dataScadenza) : null;
 
           // Package overlaps with this month
           return pkgStart <= monthEnd && (!pkgEnd || pkgEnd >= monthStart);
@@ -798,19 +830,23 @@ const getAnnualPayments = async (req, res, next) => {
         isActive = true;
 
         // Calculate total amount due for this month from active packages
+        // ✅ FIX: Evita raddoppio importi se ci sono più pacchetti mensili nello stesso mese
+        // Prendiamo l'importo del pacchetto mensile più "costoso" o il primo trovato
         const monthlyPackages = activePackages.filter(pkg => pkg.tipo === 'MENSILE');
-        const totalDue = monthlyPackages.reduce((sum, pkg) => sum + Number(pkg.prezzo || pkg.prezzoTotale || 0), 0);
+        const totalDue = monthlyPackages.length > 0
+          ? Math.max(...monthlyPackages.map(pkg => Number(pkg.prezzo || pkg.prezzoTotale || 0)))
+          : 0;
 
         // Find payments made for this month
         const monthPayments = activePackages.flatMap(pkg =>
           (pkg.pagamenti || []).filter(pmt => {
             const pmtDate = new Date(pmt.dataPagamento || pmt.createdAt);
-            // Consider payment for this month if it was made within the month period
-            // or if the package is for this month
-            const pkgMonth = new Date(pkg.dataInizio).getMonth() + 1;
-            const pkgYear = new Date(pkg.dataInizio).getFullYear();
-            return (pkgYear === yearNum && pkgMonth === month) ||
-              (pmtDate.getMonth() + 1 === month && pmtDate.getFullYear() === yearNum);
+            const pkgDate = new Date(pkg.dataInizio);
+            
+            // Un pagamento è considerato per questo mese se fatto nel mese dell'inizio pacchetto
+            // o se la data del pagamento cade in questo mese
+            return (pkgDate.getMonth() + 1 === month && pkgDate.getFullYear() === yearNum) ||
+                   (pmtDate.getMonth() + 1 === month && pmtDate.getFullYear() === yearNum);
           })
         );
 
@@ -821,22 +857,27 @@ const getAnnualPayments = async (req, res, next) => {
         let status = 'empty';
 
         if (totalDue > 0 || paidAmount > 0) {
-          if (monthEnd > oggi) {
+          if (monthEnd > oggi && paidAmount === 0) {
             status = 'future';
           } else if (paidAmount >= totalDue && totalDue > 0) {
             status = 'paid';
             totalPaid += paidAmount;
+          } else if (paidAmount > 0) {
+            // ✅ NUOVO: Stato parziale (Arancione)
+            status = 'partial';
+            totalUnpaid += (totalDue - paidAmount);
+            totalPaid += paidAmount;
           } else if (totalDue > 0) {
             status = 'unpaid';
             totalUnpaid += (totalDue - paidAmount);
-            totalPaid += paidAmount;
           }
         }
 
         months.push({
           month,
           status,
-          amount: status === 'paid' ? paidAmount : (totalDue > 0 ? totalDue : null),
+          amount: totalDue > 0 ? totalDue : (paidAmount > 0 ? paidAmount : null),
+          paidAmount: Math.round(paidAmount),
           paidDate: monthPayments.length > 0 ?
             new Date(monthPayments[0].dataPagamento || monthPayments[0].createdAt).toLocaleDateString('it-IT') : null,
           packageId: activePackages[0]?.id
@@ -860,6 +901,79 @@ const getAnnualPayments = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/students/:id/bookings
+ * Recupera lo storico delle prenotazioni effettuate tramite il form pubblico
+ * usando il numero di telefono dell'alunno o del genitore.
+ */
+const getStudentBookings = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const student = await prisma.student.findUnique({
+      where: { id },
+      select: {
+        studentPhone: true,
+        parentPhone: true,
+        firstName: true,
+        lastName: true
+      }
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Studente non trovato' });
+    }
+
+    const normalizePhone = (phone) => {
+      if (!phone) return '';
+      return phone.replace(/[\s\-\.\(\)]/g, '').replace(/^(\+39|0039)/, '');
+    };
+
+    const studentPh = normalizePhone(student.studentPhone);
+    const parentPh = normalizePhone(student.parentPhone);
+
+    // Se non abbiamo numeri di telefono, non possiamo cercare prenotazioni
+    if (!studentPh && !parentPh) {
+      return res.json({ bookings: [] });
+    }
+
+    // Cerchiamo le prenotazioni in cui il telefono corrisponde a uno dei due (normalizzato)
+    // Dato che il DB non ha il numero normalizzato, carichiamo e filtriamo per semplicità
+    // (le prenotazioni totali in un anno non sono migliaia, il filtro JS è accettabile)
+    const allBookings = await prisma.booking.findMany({
+      include: { 
+        subjects: {
+          include: {
+            assignedTutor: {
+              select: { firstName: true, lastName: true }
+            }
+          }
+        } 
+      },
+      orderBy: { requestedDate: 'desc' }
+    });
+
+    const studentBookings = allBookings.filter(b => {
+      const bPh = normalizePhone(b.studentPhone);
+      return (studentPh && bPh === studentPh) || (parentPh && bPh === parentPh);
+    });
+
+    // Formatta per il frontend per mantenere compatibilità se possibile
+    // o aggiorna il frontend per gestire la nuova struttura
+    const formattedBookings = studentBookings.map(b => ({
+      ...b,
+      // Aggregazione tutor per comodità visualizzazione card se unica, 
+      // altrimenti il frontend dovrà iterare i soggetti
+      assignedTutor: b.subjects.find(s => s.assignedTutor)?.assignedTutor || null
+    }));
+
+    res.json({ bookings: formattedBookings });
+  } catch (error) {
+    console.error('Errore recupero prenotazioni studente:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getStudents,
   getStudentById,
@@ -873,5 +987,5 @@ module.exports = {
   getDeleteInfo,
   hardDeleteStudent,
   getAnnualPayments,
+  getStudentBookings
 };
-

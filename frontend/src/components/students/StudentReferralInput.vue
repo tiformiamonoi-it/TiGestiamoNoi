@@ -60,6 +60,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { studentsAPI } from '@/services/api';
 
 const props = defineProps({
@@ -84,6 +85,7 @@ const searchResults = ref([]);
 const showDropdown = ref(false);
 const loading = ref(false);
 let searchTimeout = null;
+const toast = useToast();
 
 const handleSearch = () => {
   clearTimeout(searchTimeout);
@@ -120,7 +122,7 @@ const selectStudent = async (student) => {
     emit('updated');
   } catch (error) {
     console.error('Errore aggiunta referral:', error);
-    alert('Errore durante l\'aggiunta del referral');
+    toast.error('Errore durante l\'aggiunta del referral');
   }
 };
 
@@ -130,7 +132,7 @@ const removeReferral = async (referrerId) => {
     emit('updated');
   } catch (error) {
     console.error('Errore rimozione referral:', error);
-    alert('Errore durante la rimozione del referral');
+    toast.error('Errore durante la rimozione del referral');
   }
 };
 

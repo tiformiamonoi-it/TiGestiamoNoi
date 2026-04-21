@@ -152,9 +152,14 @@ const createPublicBooking = async (req, res, next) => {
                 studentSurname: studentSurname.trim(),
                 studentPhone: studentPhone.trim(),
                 requestedDate: new Date(requestedDate),
-                subjects,
                 notes: notes?.trim() || null,
-                status: 'PENDING'
+                status: 'PENDING',
+                subjects: {
+                    create: subjects.map(name => ({ name }))
+                }
+            },
+            include: {
+                subjects: true
             }
         });
 
@@ -173,7 +178,7 @@ const createPublicBooking = async (req, res, next) => {
                 studentName: booking.studentName,
                 studentSurname: booking.studentSurname,
                 requestedDate: booking.requestedDate,
-                subjects: booking.subjects
+                subjects: booking.subjects.map(s => s.name)
             }
         });
     } catch (error) {
@@ -228,14 +233,15 @@ const checkDuplicateBooking = async (req, res, next) => {
                     lte: endOfDay
                 },
                 status: { not: 'CANCELLED' }
-            }
+            },
+            include: { subjects: true }
         });
 
         res.json({
             isDuplicate: !!existing,
             existingBooking: existing ? {
                 id: existing.id,
-                subjects: existing.subjects,
+                subjects: existing.subjects.map(s => s.name),
                 createdAt: existing.createdAt
             } : null
         });
@@ -270,7 +276,8 @@ const addCommunication = async (req, res, next) => {
                     lte: endOfDay
                 },
                 status: { not: 'CANCELLED' }
-            }
+            },
+            include: { subjects: true }
         });
 
         if (existing) {
@@ -305,10 +312,13 @@ const addCommunication = async (req, res, next) => {
                     studentSurname: studentSurname?.trim() || '',
                     studentPhone: studentPhone.trim(),
                     requestedDate: date,
-                    subjects: [],
+                    subjects: {
+                        create: []
+                    },
                     notes: `[Comunicazione]: ${notes}`,
                     status: 'PENDING'
-                }
+                },
+                include: { subjects: true }
             });
 
             res.status(201).json({
@@ -337,8 +347,8 @@ const getBookings = async (req, res, next) => {
         const [bookings, total] = await Promise.all([
             prisma.booking.findMany({
                 where,
-                skip: parseInt(skip),
                 take: parseInt(limit),
+                include: { subjects: true },
                 orderBy: { createdAt: 'desc' }
             }),
             prisma.booking.count({ where })
@@ -428,6 +438,7 @@ const getMyBookings = async (req, res, next) => {
                 requestedDate: { gte: today },
                 status: { not: 'CANCELLED' }
             },
+            include: { subjects: true },
             orderBy: { requestedDate: 'asc' }
         });
 
@@ -438,9 +449,8 @@ const getMyBookings = async (req, res, next) => {
 
         res.json({
             bookings: userBookings.map(b => ({
-                id: b.id,
                 requestedDate: b.requestedDate,
-                subjects: b.subjects,
+                subjects: b.subjects.map(s => s.name),
                 status: b.status
             }))
         });
@@ -501,12 +511,16 @@ const updateBookingSubjects = async (req, res, next) => {
         const updatedBooking = await prisma.booking.update({
             where: { id },
             data: {
-                subjects: newSubjects,
+                subjects: {
+                    deleteMany: {}, // Rimuovi tutti i precedenti
+                    create: newSubjects.map(name => ({ name })) // Ricrea quelli nuovi
+                },
                 status: isCancelled ? 'CANCELLED' : booking.status,
                 notes: booking.notes
                     ? `${booking.notes}\n---\n${modificationNote}`
                     : modificationNote
-            }
+            },
+            include: { subjects: true }
         });
 
         // Invia email di notifica
@@ -529,7 +543,7 @@ const updateBookingSubjects = async (req, res, next) => {
             message: isCancelled ? 'Prenotazione annullata' : 'Prenotazione modificata',
             booking: {
                 id: updatedBooking.id,
-                subjects: updatedBooking.subjects,
+                subjects: updatedBooking.subjects.map(s => s.name),
                 status: updatedBooking.status
             }
         });

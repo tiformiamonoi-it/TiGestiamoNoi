@@ -38,10 +38,10 @@ const authenticateToken = async (req, res, next) => {
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
-      return res.status(403).json({ error: 'Token non valido' });
+      return res.status(401).json({ error: 'Token non valido' });
     }
     if (error.name === 'TokenExpiredError') {
-      return res.status(403).json({ error: 'Token scaduto' });
+      return res.status(401).json({ error: 'Token scaduto' });
     }
     return res.status(500).json({ error: 'Errore autenticazione' });
   }

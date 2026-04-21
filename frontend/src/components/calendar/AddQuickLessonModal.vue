@@ -158,6 +158,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import StudentSearchModal from './StudentSearchModal.vue';
 import { timeslotsAPI, tutorsAPI, lessonsAPI } from '@/services/api';
 
@@ -191,6 +192,7 @@ const duplicateError = ref(null);
 const existingStudentsInfo = ref(null);
 const existingStudentIds = ref([]);
 const existingLessonId = ref(null);
+const toast = useToast();
 
 // ========================================
 // WATCH - Carica info slot esistente
@@ -302,7 +304,7 @@ const removeStudent = (index) => {
 
 const handleSave = async () => {
   if (!canSave.value) {
-    alert('⚠️ Compila tutti i campi obbligatori:\n- Tutor\n- Slot orario\n- Almeno 1 studente');
+    toast.warning('⚠️ Compila tutti i campi obbligatori:\n- Tutor\n- Slot orario\n- Almeno 1 studente');
     return;
   }
 
@@ -332,18 +334,18 @@ const handleSave = async () => {
       payload.studenti = [...existingStudentiData, ...newStudentiData];
       
       await lessonsAPI.update(existingLessonId.value, payload);
-      alert('✅ Studenti aggiunti alla lezione esistente!');
+      toast.success('Studenti aggiunti alla lezione esistente!');
     } else {
       // Nuova lezione: crea
       payload.studenti = newStudentiData;
       await lessonsAPI.create(payload);
-      alert('✅ Lezione creata con successo!');
+      toast.success('Lezione creata con successo!');
     }
 
     emit('saved');
   } catch (error) {
     console.error('Errore salvataggio:', error);
-    alert('❌ Errore durante il salvataggio della lezione');
+    toast.error('Errore durante il salvataggio della lezione');
   } finally {
     saving.value = false;
   }

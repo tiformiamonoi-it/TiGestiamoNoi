@@ -2,140 +2,125 @@
   <div class="annual-payments">
     <!-- Header con selettore anno -->
     <div class="payments-header">
-      <h2>📅 Pagamenti Annuali {{ selectedYear }}</h2>
-      <div class="year-selector">
-        <button 
-          class="year-btn" 
-          @click="selectedYear--"
-          :disabled="selectedYear <= 2020"
-        >
-          ←
-        </button>
-        <span class="current-year">{{ selectedYear }}</span>
-        <button 
-          class="year-btn" 
-          @click="selectedYear++"
-          :disabled="selectedYear >= 2030"
-        >
-          →
-        </button>
+      <div class="title-section">
+        <h2>📅 Pagamenti {{ selectedYear }}</h2>
+        <p class="subtitle">Riepilogo scadenze e incassi mensili</p>
       </div>
       
-      <!-- Filtri rapidi -->
-      <div class="quick-filters">
-        <button 
-          :class="['filter-btn', { active: filter === 'all' }]"
-          @click="filter = 'all'"
-        >
-          Tutti
-        </button>
-        <button 
-          :class="['filter-btn', { active: filter === 'unpaid' }]"
-          @click="filter = 'unpaid'"
-        >
-          🔴 Non Saldati
-        </button>
-        <button 
-          :class="['filter-btn', { active: filter === 'active' }]"
-          @click="filter = 'active'"
-        >
-          Solo Attivi
-        </button>
+      <div class="header-actions">
+        <div class="year-selector">
+          <button 
+            class="year-btn" 
+            @click="selectedYear--"
+            :disabled="selectedYear <= 2020"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m15 18-6-6 6-6"/>
+            </svg>
+          </button>
+          <span class="current-year">{{ selectedYear }}</span>
+          <button 
+            class="year-btn" 
+            @click="selectedYear++"
+            :disabled="selectedYear >= 2030"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m9 18 6-6-6-6"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="filter-group">
+          <button 
+            v-for="f in ['all', 'unpaid', 'active']" 
+            :key="f"
+            :class="['filter-btn', { active: filter === f }]"
+            @click="filter = f"
+          >
+            {{ filterLabels[f] }}
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Legenda -->
+    <!-- Legenda Minimal -->
     <div class="legend">
-      <div class="legend-item">
-        <span class="legend-dot paid"></span>
-        <span>Saldato</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot unpaid"></span>
-        <span>Non Saldato</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot future"></span>
-        <span>Previsto</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot empty"></span>
-        <span>Nessun Pacchetto</span>
+      <div class="legend-item" v-for="l in legendItems" :key="l.label">
+        <span :class="['legend-dot', l.class]"></span>
+        <span>{{ l.label }}</span>
       </div>
     </div>
 
-    <!-- Tabella -->
-    <div class="table-container" v-if="!loading">
-      <table class="payments-table">
-        <thead>
-          <tr>
-            <th class="student-col">Alunno</th>
-            <th v-for="month in months" :key="month.num" class="month-col">
-              {{ month.short }}
-            </th>
-            <th class="total-col">Totale</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in filteredPayments" :key="row.studentId">
-            <td class="student-cell">
-              <router-link :to="`/students/${row.studentId}`" class="student-name">
-                {{ row.studentName }}
-              </router-link>
-            </td>
-            <td 
-              v-for="cell in row.months" 
-              :key="cell.month"
-              :class="['month-cell', cell.status]"
-              @click="cell.status !== 'empty' && openPaymentDetail(cell)"
-            >
-              <template v-if="cell.status === 'paid'">
-                <span class="cell-icon">✅</span>
-                <span class="cell-amount">{{ cell.amount }}€</span>
-              </template>
-              <template v-else-if="cell.status === 'unpaid'">
-                <span class="cell-icon">🔴</span>
-                <span class="cell-amount">{{ cell.amount }}€</span>
-              </template>
-              <template v-else-if="cell.status === 'future'">
-                <span class="cell-amount future-amount">{{ cell.amount }}€</span>
-              </template>
-              <template v-else>
-                <span class="cell-empty">-</span>
-              </template>
-            </td>
-            <td class="total-cell">
-              <div class="total-paid">✅ {{ row.totalPaid }}€</div>
-              <div class="total-unpaid" v-if="row.totalUnpaid > 0">🔴 {{ row.totalUnpaid }}€</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Tabella Modern -->
+    <div class="table-card" v-if="!loading">
+      <div class="table-wrapper">
+        <table class="payments-table">
+          <thead>
+            <tr>
+              <th class="student-col">Alunno</th>
+              <th v-for="month in months" :key="month.num" class="month-header">
+                {{ month.short }}
+              </th>
+              <th class="total-col">Totale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in filteredPayments" :key="row.studentId" class="student-row">
+              <td class="student-cell">
+                <router-link :to="`/students/${row.studentId}`" class="name-link">
+                  {{ row.studentName }}
+                </router-link>
+              </td>
+              
+              <td 
+                v-for="cell in row.months" 
+                :key="cell.month"
+                :class="['month-cell', cell.status]"
+                @click="cell.status !== 'empty' && openPaymentDetail(cell)"
+              >
+                <div class="cell-content">
+                  <div v-if="cell.status !== 'empty'" class="status-dot"></div>
+                  <span class="amount" v-if="cell.amount">{{ cell.amount }}€</span>
+                  <span class="empty-dash" v-else>•</span>
+                </div>
+              </td>
 
-      <div v-if="filteredPayments.length === 0" class="no-data">
-        <p>Nessun dato per l'anno {{ selectedYear }}</p>
+              <td class="total-cell">
+                <div class="total-stats">
+                  <span class="paid">€{{ row.totalPaid }}</span>
+                  <span class="unpaid" v-if="row.totalUnpaid > 0">€{{ row.totalUnpaid }}</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="filteredPayments.length === 0" class="empty-state">
+        <div class="empty-icon">📂</div>
+        <p>Nessun dato relativo all'anno {{ selectedYear }}</p>
       </div>
     </div>
 
     <!-- Loading -->
-    <div v-else class="loading-container">
-      <div class="loader"></div>
-      <p>Caricamento pagamenti...</p>
+    <div v-else class="loading-state">
+      <div class="spinner"></div>
+      <p>Caricamento dati in corso...</p>
     </div>
 
-    <!-- Sommario -->
-    <div class="summary-bar" v-if="!loading && paymentsData.length > 0">
-      <div class="summary-item">
-        <span class="summary-label">Totale Incassato:</span>
-        <span class="summary-value success">{{ totalPaidYear }}€</span>
+    <!-- Summary Widgets -->
+    <div class="summary-grid" v-if="!loading && paymentsData.length > 0">
+      <div class="summary-card success">
+        <span class="label">Incassato Totale</span>
+        <span class="value">{{ totalPaidYear }}€</span>
       </div>
-      <div class="summary-item">
-        <span class="summary-label">Da Incassare:</span>
-        <span class="summary-value danger">{{ totalUnpaidYear }}€</span>
+      <div class="summary-card danger">
+        <span class="label">Pendenze Totali</span>
+        <span class="value">{{ totalUnpaidYear }}€</span>
       </div>
-      <div class="summary-item">
-        <span class="summary-label">Alunni con Sospesi:</span>
-        <span class="summary-value warning">{{ studentsWithUnpaid }}</span>
+      <div class="summary-card warning">
+        <span class="label">Studenti con Sospesi</span>
+        <span class="value">{{ studentsWithUnpaid }}</span>
       </div>
     </div>
   </div>
@@ -143,388 +128,360 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import { studentsAPI } from '@/services/api';
 
 const loading = ref(false);
 const selectedYear = ref(new Date().getFullYear());
 const filter = ref('all');
 const paymentsData = ref([]);
+const toast = useToast();
 
 const months = [
-  { num: 1, short: 'GEN' },
-  { num: 2, short: 'FEB' },
-  { num: 3, short: 'MAR' },
-  { num: 4, short: 'APR' },
-  { num: 5, short: 'MAG' },
-  { num: 6, short: 'GIU' },
-  { num: 7, short: 'LUG' },
-  { num: 8, short: 'AGO' },
-  { num: 9, short: 'SET' },
-  { num: 10, short: 'OTT' },
-  { num: 11, short: 'NOV' },
-  { num: 12, short: 'DIC' }
+  { num: 1, short: 'GEN' }, { num: 2, short: 'FEB' }, { num: 3, short: 'MAR' },
+  { num: 4, short: 'APR' }, { num: 5, short: 'MAG' }, { num: 6, short: 'GIU' },
+  { num: 7, short: 'LUG' }, { num: 8, short: 'AGO' }, { num: 9, short: 'SET' },
+  { num: 10, short: 'OTT' }, { num: 11, short: 'NOV' }, { num: 12, short: 'DIC' }
 ];
 
-// Recupera dati
+const filterLabels = {
+  all: 'Tutti',
+  unpaid: 'Non Saldati',
+  active: 'Solo Attivi'
+};
+
+const legendItems = [
+  { label: 'Saldato', class: 'paid' },
+  { label: 'Parziale', class: 'partial' },
+  { label: 'Non Saldato', class: 'unpaid' },
+  { label: 'Previsto', class: 'future' },
+  { label: 'Nessun Pacchetto', class: 'empty' }
+];
+
 async function fetchAnnualPayments() {
   loading.value = true;
   try {
     const response = await studentsAPI.getAnnualPayments(selectedYear.value);
     paymentsData.value = response.data || [];
   } catch (e) {
-    console.error('Errore caricamento pagamenti annuali:', e);
-    paymentsData.value = [];
+    console.error('Errore caricamento pagamenti:', e);
   } finally {
     loading.value = false;
   }
 }
 
-// Filtra in base al filtro selezionato
 const filteredPayments = computed(() => {
   if (filter.value === 'all') return paymentsData.value;
-  
-  if (filter.value === 'unpaid') {
-    return paymentsData.value.filter(row => row.totalUnpaid > 0);
-  }
-  
-  if (filter.value === 'active') {
-    return paymentsData.value.filter(row => row.isActive);
-  }
-  
-  return paymentsData.value;
+  return paymentsData.value.filter(row => 
+    filter.value === 'unpaid' ? row.totalUnpaid > 0 : row.isActive
+  );
 });
 
-// Calcoli sommario
-const totalPaidYear = computed(() => {
-  return paymentsData.value.reduce((sum, row) => sum + (row.totalPaid || 0), 0);
-});
-
-const totalUnpaidYear = computed(() => {
-  return paymentsData.value.reduce((sum, row) => sum + (row.totalUnpaid || 0), 0);
-});
-
-const studentsWithUnpaid = computed(() => {
-  return paymentsData.value.filter(row => row.totalUnpaid > 0).length;
-});
+const totalPaidYear = computed(() => paymentsData.value.reduce((sum, r) => sum + (r.totalPaid || 0), 0));
+const totalUnpaidYear = computed(() => paymentsData.value.reduce((sum, r) => sum + (r.totalUnpaid || 0), 0));
+const studentsWithUnpaid = computed(() => paymentsData.value.filter(r => r.totalUnpaid > 0).length);
 
 function openPaymentDetail(cell) {
-  // Per ora alert, in futuro modal dettaglio
   if (cell.status === 'paid') {
-    alert(`Pagamento saldato: ${cell.amount}€\nData: ${cell.paidDate || 'N/D'}`);
+    toast.success(`Saldato: ${cell.amount}€\nData: ${cell.paidDate || 'N/D'}`);
+  } else if (cell.status === 'partial') {
+    toast.warning(`Parziale: Ricevuti ${cell.paidAmount}€ su ${cell.amount}€`);
   } else if (cell.status === 'unpaid') {
-    alert(`Da pagare: ${cell.amount}€\nScadenza: ${cell.dueDate || 'N/D'}`);
+    toast.error(`Mancante: ${cell.amount}€`);
+  } else if (cell.status === 'future') {
+    toast.info(`Previsto: ${cell.amount}€ per il mese di ${months[cell.month - 1].short}`);
   }
 }
 
-// Watch per cambi anno
-watch(selectedYear, () => {
-  fetchAnnualPayments();
-});
-
-onMounted(() => {
-  fetchAnnualPayments();
-});
+watch(selectedYear, fetchAnnualPayments);
+onMounted(fetchAnnualPayments);
 </script>
 
 <style scoped>
 .annual-payments {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 10px;
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .payments-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  gap: 20px;
-  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 30px;
 }
 
-.payments-header h2 {
+.title-section h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #1e293b;
   margin: 0;
-  font-size: 20px;
-  color: #344767;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  color: #64748b;
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
 }
 
 .year-selector {
   display: flex;
   align-items: center;
-  gap: 12px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 8px;
 }
 
 .year-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #e9ecef;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
   background: white;
-  border-radius: 6px;
-  font-size: 16px;
+  border-radius: 8px;
+  color: #64748b;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   transition: all 0.2s;
 }
 
 .year-btn:hover:not(:disabled) {
-  background: #f8f9fa;
-  border-color: #5e72e4;
-}
-
-.year-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  background: #5e72e4;
+  color: white;
 }
 
 .current-year {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
-  color: #5e72e4;
+  color: #1e293b;
+  padding: 0 8px;
 }
 
-.quick-filters {
+.filter-group {
   display: flex;
-  gap: 8px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
 }
 
 .filter-btn {
-  padding: 8px 14px;
-  border: 1px solid #e9ecef;
-  background: white;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #8392ab;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
   cursor: pointer;
+  border-radius: 7px;
   transition: all 0.2s;
 }
 
-.filter-btn:hover {
-  border-color: #5e72e4;
-  color: #5e72e4;
-}
-
 .filter-btn.active {
-  background: #5e72e4;
-  color: white;
-  border-color: #5e72e4;
+  background: white;
+  color: #5e72e4;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .legend {
   display: flex;
-  gap: 20px;
-  margin-bottom: 16px;
-  padding: 12px 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 0 4px;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #8392ab;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .legend-dot {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 
-.legend-dot.paid { background: #2dce89; }
-.legend-dot.unpaid { background: #f5365c; }
-.legend-dot.future { background: #344767; }
-.legend-dot.empty { background: #e9ecef; }
+.legend-dot.paid { background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.legend-dot.partial { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+.legend-dot.unpaid { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+.legend-dot.future { background: #334155; }
+.legend-dot.empty { background: #e2e8f0; }
 
-.table-container {
+.table-card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+  overflow: hidden;
+  border: 1px solid #f1f5f9;
+}
+
+.table-wrapper {
   overflow-x: auto;
 }
 
 .payments-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
 }
 
 .payments-table th {
-  padding: 12px 8px;
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #344767;
+  padding: 16px 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid #f1f5f9;
   text-align: center;
-  border-bottom: 2px solid #e9ecef;
 }
 
-.payments-table th.student-col {
-  text-align: left;
-  min-width: 180px;
-}
+.student-col { text-align: left !important; padding-left: 24px !important; width: 220px; }
 
-.payments-table th.month-col {
-  min-width: 60px;
-}
-
-.payments-table th.total-col {
-  min-width: 100px;
-}
-
-.payments-table td {
-  padding: 10px 8px;
-  border-bottom: 1px solid #f1f3f5;
-  text-align: center;
-  vertical-align: middle;
-}
+.student-row:hover { background: #f8fafc; }
 
 .student-cell {
+  padding: 14px 24px;
   text-align: left;
 }
 
-.student-name {
-  color: #344767;
+.name-link {
+  color: #475569;
+  font-weight: 700;
   text-decoration: none;
-  font-weight: 600;
+  font-size: 13px;
+  transition: color 0.2s;
 }
 
-.student-name:hover {
-  color: #5e72e4;
-}
+.name-link:hover { color: #5e72e4; }
 
 .month-cell {
+  padding: 10px 4px;
   cursor: pointer;
-  transition: all 0.2s;
-  border-radius: 4px;
+  position: relative;
+  transition: background 0.2s;
 }
 
-.month-cell:hover:not(.empty) {
-  background: #f8f9fa;
-  transform: scale(1.05);
-}
-
-.month-cell.paid {
-  background: rgba(45, 206, 137, 0.1);
-}
-
-.month-cell.unpaid {
-  background: rgba(245, 54, 92, 0.1);
-}
-
-.month-cell.future {
-  background: rgba(52, 71, 103, 0.05);
-}
-
-.cell-icon {
-  display: block;
-  font-size: 14px;
-}
-
-.cell-amount {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: #344767;
-}
-
-.future-amount {
-  color: #8392ab;
-}
-
-.cell-empty {
-  color: #d1d5db;
-}
-
-.total-cell {
-  font-weight: 600;
-}
-
-.total-paid {
-  color: #2dce89;
-  font-size: 12px;
-}
-
-.total-unpaid {
-  color: #f5365c;
-  font-size: 11px;
-}
-
-.no-data {
-  text-align: center;
-  padding: 40px;
-  color: #8392ab;
-}
-
-.loading-container {
-  text-align: center;
-  padding: 60px;
-  color: #8392ab;
-}
-
-.loader {
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #5e72e4;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 16px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.summary-bar {
-  display: flex;
-  justify-content: space-around;
-  gap: 20px;
-  margin-top: 24px;
-  padding: 16px 24px;
-  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-  border-radius: 10px;
-}
-
-.summary-item {
+.cell-content {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
 }
 
-.summary-label {
-  font-size: 12px;
-  color: #8392ab;
-  text-transform: uppercase;
-  font-weight: 600;
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
 }
 
-.summary-value {
-  font-size: 20px;
+.paid .status-dot { background: #10b981; }
+.partial .status-dot { background: #f59e0b; }
+.unpaid .status-dot { background: #ef4444; }
+.future .status-dot { background: #334155; }
+
+.amount {
+  font-size: 10px;
   font-weight: 700;
+  color: #475569;
 }
 
-.summary-value.success { color: #2dce89; }
-.summary-value.danger { color: #f5365c; }
-.summary-value.warning { color: #fb6340; }
+.future .amount { color: #94a3b8; font-weight: 500; }
 
-@media (max-width: 768px) {
-  .payments-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .quick-filters {
-    flex-wrap: wrap;
-  }
-  
-  .legend {
-    flex-wrap: wrap;
-  }
-  
-  .summary-bar {
-    flex-direction: column;
-    gap: 16px;
-  }
+.empty-dash { color: #e2e8f0; font-size: 18px; line-height: 1; }
+
+.total-cell {
+  background: #f8fafc;
+}
+
+.total-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 16px;
+  align-items: flex-end;
+}
+
+.total-stats span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.total-stats .paid { color: #059669; }
+.total-stats .unpaid { color: #dc2626; }
+
+.empty-state {
+  padding: 60px 20px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+.loading-state {
+  padding: 60px;
+  text-align: center;
+  color: #64748b;
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #f1f5f9;
+  border-top: 3px solid #5e72e4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.summary-card {
+  padding: 16px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: white;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.summary-card .label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; }
+.summary-card .value { font-size: 20px; font-weight: 800; color: #1e293b; }
+
+.summary-card.success { border-bottom: 3px solid #10b981; }
+.summary-card.danger { border-bottom: 3px solid #ef4444; }
+.summary-card.warning { border-bottom: 3px solid #f59e0b; }
+
+@media (max-width: 1024px) {
+  .payments-header { flex-direction: column; align-items: flex-start; gap: 20px; }
+  .header-actions { width: 100%; flex-wrap: wrap; }
 }
 </style>

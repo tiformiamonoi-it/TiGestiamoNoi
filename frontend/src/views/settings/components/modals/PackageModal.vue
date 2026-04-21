@@ -101,6 +101,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { standardPackagesAPI } from '@/services/api';
 
 const props = defineProps({
@@ -127,6 +128,7 @@ const form = ref({
 });
 
 const submitting = ref(false);
+const toast = useToast();
 
 const oreTotali = computed(() => {
   if (form.value.tipo === 'MENSILE') {
@@ -167,7 +169,7 @@ async function handleSubmit() {
     emit('saved');
   } catch (error) {
     console.error('Errore salvataggio:', error);
-    alert('❌ Errore durante il salvataggio');
+    toast.error('Errore durante il salvataggio');
   } finally {
     submitting.value = false;
   }

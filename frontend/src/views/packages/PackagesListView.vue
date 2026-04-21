@@ -65,7 +65,6 @@
           <option value="DA_RINNOVARE">🟠 Da Rinnovare</option>
           <option value="SCADUTO">🔴 Scaduto</option>
           <option value="ESAURITO">🔴 Esaurito</option>
-          <option value="NEGATIVO">🔴 Negativo</option>
           <option value="DA_PAGARE">🟡 Da Pagare</option>
           <option value="PAGATO">🔵 Pagato</option>
           <option value="CHIUSO">⚫ Chiuso</option>
@@ -94,9 +93,14 @@
       </div>
     </div>
 
-    <!-- Warning per orari selezionati -->
+    <!-- Warning pacchetti attivi selezionati -->
     <div v-if="hasOrariSelected" class="warning-banner">
       ⚠️ I pacchetti ORARI non possono essere rinnovati in bulk. Deselezionali per procedere.
+    </div>
+
+    <!-- Info: visualizzazione solo ultimo pacchetto per studente -->
+    <div class="info-banner">
+      ℹ️ Viene mostrato solo l'ultimo pacchetto per ogni alunno. I pacchetti <strong>Attivi</strong> non sono selezionabili per il rinnovo.
     </div>
 
     <!-- Table -->
@@ -148,8 +152,8 @@
                 type="checkbox"
                 :checked="isSelected(pkg.id)"
                 @change="toggleSelect(pkg)"
-                :disabled="pkg.tipo === 'ORE'"
-                :title="pkg.tipo === 'ORE' ? 'Pacchetti orari da rinnovare singolarmente' : ''"
+                :disabled="pkg.tipo === 'ORE' || isPackageActive(pkg)"
+                :title="pkg.tipo === 'ORE' ? 'Pacchetti orari da rinnovare singolarmente' : isPackageActive(pkg) ? 'Pacchetto attivo: non richiede rinnovo' : ''"
               />
             </td>
             <td class="student-cell">
@@ -198,16 +202,18 @@
             </td>
             <td class="actions-cell">
               <div class="actions-menu">
-                <button class="btn-action" @click="viewPackage(pkg)">
+                <button class="btn-action" @click="viewPackage(pkg)" title="Vai al profilo alunno">
                   👁️
                 </button>
                 <button 
+                  v-if="!isPackageActive(pkg)"
                   class="btn-action" 
                   @click="renewSingle(pkg)"
                   title="Rinnova pacchetto"
                 >
                   🔄
                 </button>
+                <span v-else class="badge-active-pkg" title="Pacchetto attivo: nessun rinnovo necessario">✓ Attivo</span>
               </div>
             </td>
           </tr>
@@ -330,7 +336,8 @@ async function loadPackages(reset = false) {
       page: page.value,
       limit: 30,
       tipo: filterTipo.value || undefined,
-      stati: statiParam
+      stati: statiParam,
+      latestOnly: 'true', // ✅ Solo l'ultimo pacchetto per studente
     };
 
     const response = await packagesAPI.getAll(params);
@@ -405,6 +412,14 @@ function clearFilters() {
   filterStato.value = '';
   searchQuery.value = '';
   loadPackages(true);
+}
+
+// Verifica se un pacchetto è attivo (non deve essere rinnovato)
+function isPackageActive(pkg) {
+  return pkg.stati?.includes('ATTIVO') && 
+         !pkg.stati?.includes('SCADUTO') && 
+         !pkg.stati?.includes('ESAURITO') &&
+         !pkg.stati?.includes('DA_RINNOVARE');
 }
 
 // Selection
@@ -537,7 +552,6 @@ function getStatoLabel(stato) {
     'DA_RINNOVARE': 'Da Rinnovare',
     'SCADUTO': 'Scaduto',
     'ESAURITO': 'Esaurito',
-    'NEGATIVO': 'Negativo',
     'DA_PAGARE': 'Da Pagare',
     'PAGATO': 'Pagato',
     'CHIUSO': 'Chiuso'
@@ -726,7 +740,29 @@ onMounted(() => {
   border-radius: 8px;
   color: #856404;
   font-weight: 500;
+  margin-bottom: 12px;
+}
+
+/* Info Banner */
+.info-banner {
+  padding: 10px 16px;
+  background: rgba(94, 114, 228, 0.07);
+  border: 1px solid rgba(94, 114, 228, 0.2);
+  border-radius: 8px;
+  color: #5e72e4;
+  font-size: 13px;
   margin-bottom: 16px;
+}
+
+/* Badge Attivo in colonna azioni */
+.badge-active-pkg {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(45, 206, 137, 0.12);
+  color: #2dce89;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Table */
@@ -894,8 +930,6 @@ onMounted(() => {
 .status-badge.scaduto { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
 /* ESAURITO - Rosso */
 .status-badge.esaurito { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
-/* NEGATIVO - Rosso */
-.status-badge.negativo { background: rgba(245, 54, 92, 0.1); color: #f5365c; }
 /* DA_PAGARE - Giallo */
 .status-badge.da_pagare { background: rgba(251, 191, 36, 0.1); color: #d97706; }
 /* PAGATO - Blu */

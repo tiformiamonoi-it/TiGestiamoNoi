@@ -111,6 +111,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { standardPackagesAPI } from '@/services/api';
 import PackageModal from './modals/PackageModal.vue';
 
@@ -120,6 +121,7 @@ const showModal = ref(false);
 const selectedPackage = ref(null);
 const filterTipo = ref('');
 const filterCategoria = ref('');
+const toast = useToast();
 
 const categorie = computed(() => {
   const cats = new Set(packages.value.map(p => p.categoria));
@@ -167,13 +169,13 @@ async function toggleActive(pkg) {
     loadPackages();
   } catch (error) {
     console.error('Errore toggle stato:', error);
-    alert('❌ Errore durante l\'aggiornamento');
+    toast.error('Errore durante l\'aggiornamento');
   }
 }
 
 async function confirmDelete(pkg) {
   if (pkg._count?.pacchetti > 0) {
-    alert(`⚠️ Impossibile eliminare: questo pacchetto è presente nella storia di ${pkg._count.pacchetti} alunno/i. Puoi solo disattivarlo.`);
+    toast.warning(`Impossibile eliminare: questo pacchetto è presente nella storia di ${pkg._count.pacchetti} alunno/i. Puoi solo disattivarlo.`);
     return;
   }
 
@@ -185,7 +187,7 @@ async function confirmDelete(pkg) {
   } catch (error) {
     console.error('Errore eliminazione:', error);
     const errorMsg = error.response?.data?.error || 'Errore durante l\'eliminazione';
-    alert(`❌ ${errorMsg}`);
+    toast.error(errorMsg);
   }
 }
 

@@ -6,6 +6,18 @@
 const prisma = require('../config/prisma');
 
 /**
+ * Normalizza il numero di telefono per il confronto
+ * Rimuove spazi, trattini, punti e prefissi +39/0039
+ */
+const normalizePhone = (phone) => {
+    if (!phone) return '';
+    let p = String(phone).replace(/[\s\-\.\(\)]/g, '');
+    if (p.startsWith('+39')) p = p.substring(3);
+    if (p.startsWith('0039')) p = p.substring(4);
+    return p;
+};
+
+/**
  * POST /api/availability/public/check
  * Verifica se il telefono corrisponde a un tutor registrato
  */
@@ -17,19 +29,24 @@ const checkTutorPhone = async (req, res, next) => {
             return res.status(400).json({ error: 'Numero di telefono richiesto' });
         }
 
-        // Cerca tutor con questo telefono
-        const tutor = await prisma.user.findFirst({
+        const normalizedInput = normalizePhone(phone);
+
+        // Cerca tutti i tutor attivi (di solito un numero gestibile)
+        const activeTutors = await prisma.user.findMany({
             where: {
-                phone: phone.trim(),
                 role: 'TUTOR',
                 active: true
             },
             select: {
                 id: true,
                 firstName: true,
-                lastName: true
+                lastName: true,
+                phone: true
             }
         });
+
+        // Trova il match normalizzando anche i numeri nel DB
+        const tutor = activeTutors.find(t => normalizePhone(t.phone) === normalizedInput);
 
         if (!tutor) {
             return res.status(404).json({
@@ -63,14 +80,13 @@ const getTutorAvailability = async (req, res, next) => {
             return res.status(400).json({ error: 'Numero di telefono richiesto' });
         }
 
-        // Trova tutor
-        const tutor = await prisma.user.findFirst({
-            where: {
-                phone: phone.trim(),
-                role: 'TUTOR',
-                active: true
-            }
+        const normalizedInput = normalizePhone(phone);
+
+        // Trova tutor (normalizzando il numero nel DB)
+        const activeUsers = await prisma.user.findMany({
+            where: { role: 'TUTOR', active: true }
         });
+        const tutor = activeUsers.find(u => normalizePhone(u.phone) === normalizedInput);
 
         if (!tutor) {
             return res.status(404).json({ error: 'Tutor non trovato' });
@@ -126,14 +142,13 @@ const saveTutorAvailability = async (req, res, next) => {
             return res.status(400).json({ error: 'Parametri non validi' });
         }
 
-        // Trova tutor
-        const tutor = await prisma.user.findFirst({
-            where: {
-                phone: phone.trim(),
-                role: 'TUTOR',
-                active: true
-            }
+        const normalizedInput = normalizePhone(phone);
+
+        // Trova tutor (normalizzando il numero nel DB)
+        const activeUsers = await prisma.user.findMany({
+            where: { role: 'TUTOR', active: true }
         });
+        const tutor = activeUsers.find(u => normalizePhone(u.phone) === normalizedInput);
 
         if (!tutor) {
             return res.status(404).json({ error: 'Tutor non trovato' });
@@ -307,11 +322,15 @@ const getMatchingData = async (req, res, next) => {
                 status: { not: 'CANCELLED' }
             },
             include: {
-                assignedTutor: {
-                    select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true
+                subjects: {
+                    include: {
+                        assignedTutor: {
+                            select: {
+                                id: true,
+                                firstName: true,
+                                lastName: true
+                            }
+                        }
                     }
                 }
             },
@@ -321,17 +340,18 @@ const getMatchingData = async (req, res, next) => {
         // Formatta prenotazioni: 1 badge per ogni materia
         const badges = [];
         bookings.forEach(b => {
-            b.subjects.forEach(subject => {
+            b.subjects.forEach(subjectRel => {
                 badges.push({
+                    subjectId: subjectRel.id,
                     bookingId: b.id,
                     studentName: b.studentName,
                     studentSurname: b.studentSurname,
                     studentPhone: b.studentPhone,
-                    subject,
+                    subject: subjectRel.name,
                     notes: b.notes,
-                    assignedTutorId: b.assignedTutorId,
-                    assignedSlot: b.assignedSlot,
-                    isAssigned: !!b.assignedTutorId && !!b.assignedSlot
+                    assignedTutorId: subjectRel.assignedTutorId,
+                    assignedSlot: subjectRel.assignedSlot,
+                    isAssigned: !!subjectRel.assignedTutorId && !!subjectRel.assignedSlot
                 });
             });
         });
@@ -361,10 +381,10 @@ const getMatchingData = async (req, res, next) => {
  */
 const assignBooking = async (req, res, next) => {
     try {
-        const { bookingId, tutorId, slot } = req.body;
+        const { subjectId, tutorId, slot } = req.body;
 
-        if (!bookingId) {
-            return res.status(400).json({ error: 'bookingId richiesto' });
+        if (!subjectId) {
+            return res.status(400).json({ error: 'subjectId richiesto' });
         }
 
         // Se tutorId e slot sono null, rimuovi assegnazione
@@ -374,8 +394,8 @@ const assignBooking = async (req, res, next) => {
             assignedAt: tutorId && slot ? new Date() : null
         };
 
-        const booking = await prisma.booking.update({
-            where: { id: bookingId },
+        const subject = await prisma.bookingSubject.update({
+            where: { id: subjectId },
             data: updateData,
             include: {
                 assignedTutor: {
@@ -384,13 +404,14 @@ const assignBooking = async (req, res, next) => {
                         firstName: true,
                         lastName: true
                     }
-                }
+                },
+                booking: true
             }
         });
 
         res.json({
             message: tutorId ? 'Assegnazione salvata' : 'Assegnazione rimossa',
-            booking
+            subject
         });
     } catch (error) {
         console.error('Errore assegnazione:', error);

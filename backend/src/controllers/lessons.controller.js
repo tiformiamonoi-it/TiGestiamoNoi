@@ -182,6 +182,20 @@ const createLesson = async (req, res, next) => {
       });
     }
 
+    // ✅ NUOVO: Validazione Tutor e TimeSlot attivi
+    const [tutor, timeSlot] = await Promise.all([
+      prisma.user.findUnique({ where: { id: tutorId }, select: { active: true, role: true } }),
+      prisma.timeSlot.findUnique({ where: { id: timeSlotId }, select: { active: true } })
+    ]);
+
+    if (!tutor || !tutor.active || tutor.role !== 'TUTOR') {
+      return res.status(400).json({ error: 'Il tutor selezionato non è attivo o non è un tutor valido' });
+    }
+
+    if (!timeSlot || !timeSlot.active) {
+      return res.status(400).json({ error: 'Lo slot orario selezionato non è più disponibile' });
+    }
+
     // ✅ STEP 0: Cerca lezione esistente per tutor+data+slot
     const dataInizioGiorno = new Date(data);
     dataInizioGiorno.setHours(0, 0, 0, 0);
@@ -222,19 +236,43 @@ const createLesson = async (req, res, next) => {
       // Aggiungi studenti alla lezione esistente
       const result = await prisma.$transaction(async (tx) => {
         const studentiAggiornati = [];
+        
+        // BATCH READS
+        const studentIds = studentiNuovi.map(s => s.studentId);
+        
+        const allCandidatePackages = await tx.package.findMany({
+          where: { studentId: { in: studentIds } },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        const dataInizio = new Date(data);
+        dataInizio.setHours(0, 0, 0, 0);
+        const dataFine = new Date(data);
+        dataFine.setHours(23, 59, 59, 999);
+
+        const lezioniOggiGrouped = await tx.lessonStudent.groupBy({
+          by: ['studentId'],
+          where: {
+            studentId: { in: studentIds },
+            lesson: { data: { gte: dataInizio, lte: dataFine } },
+          },
+          _count: { studentId: true }
+        });
+        
+        const lezioniOggiMap = {};
+        lezioniOggiGrouped.forEach(l => {
+          lezioniOggiMap[l.studentId] = l._count.studentId;
+        });
 
         for (const studentData of studentiNuovi) {
           const { studentId, mezzaLezione = false } = studentData;
 
-          // Trova pacchetto valido (ATTIVO, non scaduto)
-          const candidatePackages = await tx.package.findMany({
-            where: { studentId },
-            orderBy: { createdAt: 'asc' },
-          });
+          // PRE-FETCH (spostato prima del loop)
+
+          const candidatePackages = allCandidatePackages.filter(p => p.studentId === studentId);
 
           let pacchetto = null;
           for (const pkg of candidatePackages) {
-            // ✅ FIX: Usa isPacchettoValidoPerLezioni per selezionare solo pacchetti ATTIVI
             if (isPacchettoValidoPerLezioni(pkg)) {
               pacchetto = pkg;
               break;
@@ -245,19 +283,7 @@ const createLesson = async (req, res, next) => {
             throw new Error(`Nessun pacchetto valido per studente ${studentId}`);
           }
 
-          // Verifica prima lezione del giorno
-          const dataInizio = new Date(data);
-          dataInizio.setHours(0, 0, 0, 0);
-          const dataFine = new Date(data);
-          dataFine.setHours(23, 59, 59, 999);
-
-          const lezioniEsistentiOggi = await tx.lesson.count({
-            where: {
-              data: { gte: dataInizio, lte: dataFine },
-              lessonStudents: { some: { studentId } },
-            },
-          });
-
+          const lezioniEsistentiOggi = lezioniOggiMap[studentId] || 0;
           const isPrimaLezioneOggi = lezioniEsistentiOggi === 0;
 
           // Scala ore
@@ -366,19 +392,41 @@ const createLesson = async (req, res, next) => {
 
       const studentiAggiornati = [];
 
+      // BATCH READS
+      const studentIds = studenti.map(s => s.studentId);
+      
+      const allCandidatePackages = await tx.package.findMany({
+        where: { studentId: { in: studentIds } },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const dataInizio = new Date(data);
+      dataInizio.setHours(0, 0, 0, 0);
+      const dataFine = new Date(data);
+      dataFine.setHours(23, 59, 59, 999);
+
+      const lezioniOggiGrouped = await tx.lessonStudent.groupBy({
+        by: ['studentId'],
+        where: {
+          studentId: { in: studentIds },
+          lesson: { data: { gte: dataInizio, lte: dataFine } },
+        },
+        _count: { studentId: true }
+      });
+      
+      const lezioniOggiMap = {};
+      lezioniOggiGrouped.forEach(l => {
+        lezioniOggiMap[l.studentId] = l._count.studentId;
+      });
+
       // Per ogni studente: controlla se ha già lezioni nello stesso giorno
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // Trova pacchetto valido (ATTIVO, non scaduto)
-        const candidatePackages = await tx.package.findMany({
-          where: { studentId },
-          orderBy: { createdAt: 'asc' },
-        });
+        const candidatePackages = allCandidatePackages.filter(p => p.studentId === studentId);
 
         let pacchetto = null;
         for (const pkg of candidatePackages) {
-          // ✅ FIX: Usa isPacchettoValidoPerLezioni per selezionare solo pacchetti ATTIVI
           if (isPacchettoValidoPerLezioni(pkg)) {
             pacchetto = pkg;
             break;
@@ -389,19 +437,7 @@ const createLesson = async (req, res, next) => {
           throw new Error(`Nessun pacchetto valido trovato per studente ${studentId} (tutti i pacchetti sono chiusi o sospesi)`);
         }
 
-        // Verifica se studente ha già lezioni in questa data
-        const dataInizio = new Date(data);
-        dataInizio.setHours(0, 0, 0, 0);
-        const dataFine = new Date(data);
-        dataFine.setHours(23, 59, 59, 999);
-
-        const lezioniEsistentiOggi = await tx.lesson.count({
-          where: {
-            data: { gte: dataInizio, lte: dataFine },
-            lessonStudents: { some: { studentId } },
-          },
-        });
-
+        const lezioniEsistentiOggi = lezioniOggiMap[studentId] || 0;
         const isPrimaLezioneOggi = lezioniEsistentiOggi === 0;
 
         // Scala ore (sempre -1h)
@@ -554,16 +590,18 @@ const updateLesson = async (req, res, next) => {
         },
       });
 
+      // BATCH READ: Precarica tutti i pacchetti per tutti gli studenti coinvolti
+      const studentIds = studenti.map(s => s.studentId);
+      const allCandidatePackages = await tx.package.findMany({
+        where: { studentId: { in: studentIds } },
+        orderBy: { createdAt: 'asc' },
+      });
+
       for (const studentData of studenti) {
         const { studentId, mezzaLezione = false } = studentData;
 
-        // ✅ Prendi tutti i pacchetti dello studente e filtra via quelli non attivi
-        const candidatePackages = await tx.package.findMany({
-          where: {
-            studentId: studentId,
-          },
-          orderBy: { createdAt: 'asc' }, // Più vecchio prima
-        });
+        // Filtra i pacchetti dello studente dal batch
+        const candidatePackages = allCandidatePackages.filter(p => p.studentId === studentId);
 
         let pacchetto = null;
 
@@ -1052,12 +1090,18 @@ const getAvailableStudents = async (req, res, next) => {
         const allPackagesClosed = student.pacchetti.length > 0 &&
           student.pacchetti.every(pkg => isPacchettoClosed(pkg));
 
+        // Check se ha un pacchetto SCADUTO DA_PAGARE
+        const hasScadutoDaPagare = student.pacchetti.some(pkg => 
+          pkg.stati && pkg.stati.includes('SCADUTO') && pkg.stati.includes('DA_PAGARE')
+        );
+
         return {
           ...student,
           // ✅ Mostra solo pacchetti attivi
           pacchetti: pacchettiAttivi,
           // Flag per il frontend: tutti pacchetti chiusi
           _allPackagesClosed: allPackagesClosed,
+          _hasScadutoDaPagare: hasScadutoDaPagare,
         };
       });
 

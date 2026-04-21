@@ -92,76 +92,106 @@
       </div>
 
       <div class="actions-grid">
-        <div 
-          v-for="action in azioniPrioritarie" 
-          :key="action.label"
-          class="action-card"
-          :class="action.priority"
-          @click="handleActionClick(action)"
-        >
-          <div class="action-header">
-            <div class="action-badge" :class="action.badgeClass">
-              {{ action.count }}
+        <!-- PACCHETTI IN SCADENZA -->
+        <div class="action-card warning" :class="{ 'expanded': showAll.inScadenza }">
+          <div class="action-header clickable" @click="toggleShowAll('inScadenza')">
+            <div class="action-badge warning">
+              {{ actionsData.pacchettiInScadenzaList.length }}
             </div>
-            <h4>{{ action.label }}</h4>
+            <h4>Pacchetti in Scadenza</h4>
+            <span class="expand-icon" v-if="actionsData.pacchettiInScadenzaList.length > 3">
+              {{ showAll.inScadenza ? '▲' : '▼' }}
+            </span>
           </div>
-          <p class="action-desc">{{ action.desc }}</p>
+          <p class="action-desc">Studenti con ≤ 10% ore/giorni rimanenti</p>
+          
+          <div class="action-list" v-if="actionsData.pacchettiInScadenzaList.length">
+            <div 
+              v-for="(item, idx) in visibleList(actionsData.pacchettiInScadenzaList, 'inScadenza')" 
+              :key="idx" 
+              class="action-list-item"
+              @click="router.push(`/students/${item.studentId}`)"
+            >
+              <div class="item-name">{{ item.studentName }}</div>
+              <div class="item-details">{{ item.tipo }}: {{ item.percentualeResidua }}% residuo</div>
+            </div>
+            
+            <button class="btn-visualizza-tutti" @click="goToStudents('inScadenza')">
+              Visualizza tutti nella lista studenti →
+            </button>
+          </div>
+        </div>
+
+        <!-- PACCHETTI SCADUTI -->
+        <div class="action-card critical" :class="{ 'expanded': showAll.scaduti }">
+          <div class="action-header clickable" @click="toggleShowAll('scaduti')">
+            <div class="action-badge danger">
+              {{ actionsData.pacchettiScadutiList.length }}
+            </div>
+            <h4>Pacchetti Scaduti</h4>
+            <span class="expand-icon" v-if="actionsData.pacchettiScadutiList.length > 3">
+              {{ showAll.scaduti ? '▲' : '▼' }}
+            </span>
+          </div>
+          <p class="action-desc">Pacchetti con stato Scaduto</p>
+          
+          <div class="action-list" v-if="actionsData.pacchettiScadutiList.length">
+            <div 
+              v-for="(item, idx) in visibleList(actionsData.pacchettiScadutiList, 'scaduti')" 
+              :key="idx" 
+              class="action-list-item"
+              @click="router.push(`/students/${item.studentId}`)"
+            >
+              <div class="item-name">{{ item.studentName }}</div>
+              <div class="item-details">{{ formatDate(item.dataScadenza) }} - {{ item.nome }}</div>
+            </div>
+            <button class="btn-visualizza-tutti" @click="goToStudents('scaduti')">
+              Visualizza tutti nella lista studenti →
+            </button>
+          </div>
+        </div>
+
+        <!-- PAGAMENTI PENDENTI -->
+        <div class="action-card high" :class="{ 'expanded': showAll.pagamenti }">
+          <div class="action-header clickable" @click="toggleShowAll('pagamenti')">
+            <div class="action-badge info">
+              {{ actionsData.pagamentiPendentiList.length }}
+            </div>
+            <h4>Pagamenti Pendenti</h4>
+            <span class="expand-icon" v-if="actionsData.pagamentiPendentiList.length > 3">
+              {{ showAll.pagamenti ? '▲' : '▼' }}
+            </span>
+          </div>
+          <p class="action-desc">Pacchetti con saldo non completato</p>
+          
+          <div class="action-list" v-if="actionsData.pagamentiPendentiList.length">
+            <div 
+              v-for="(item, idx) in visibleList(actionsData.pagamentiPendentiList, 'pagamenti')" 
+              :key="idx" 
+              class="action-list-item"
+              @click="router.push(`/students/${item.studentId}`)"
+            >
+              <div class="item-name">{{ item.studentName }}</div>
+              <div class="item-details">Residuo: €{{ item.importoResiduo }}</div>
+            </div>
+            <button class="btn-visualizza-tutti" @click="goToStudents('pagamenti')">
+              Visualizza tutti nella lista studenti →
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- Finanze e Attività -->
+      <!-- Attività -->
       <div class="widgets-row">
-        <!-- Finanze Admin -->
-        <div v-if="authStore.isAdmin" class="widget-card">
+        <div class="widget-card full-width">
           <div class="widget-header">
-            <h3>Panoramica Finanziaria</h3>
-            <select v-model="finanzePeriodo" class="select-minimal" @change="handleFinanzeChange">
-            <option value="mese_corrente">{{ finanze.periodo || 'Mese Corrente' }}</option>
-            <option value="30_giorni">Ultimi 30 Giorni</option>
+            <h3>Attività</h3>
+            <select v-model="periodoAttivita" class="select-minimal" @change="handleAttivitaChange">
+              <option value="ieri">Ieri</option>
+              <option value="mese_corrente">Questo Mese</option>
+              <option value="mese_precedente">Mese Precedente</option>
+              <option value="anno_corrente">Anno Attuale</option>
             </select>
-          </div>
-
-          <div class="finance-grid">
-            <div class="finance-item entrate">
-              <div class="finance-label">Entrate</div>
-              <div class="finance-value">€{{ finanze.entrate.toLocaleString() }}</div>
-              <div class="finance-trend positive">+{{ finanze.trendEntrate }}%</div>
-            </div>
-
-            <div class="finance-item uscite">
-              <div class="finance-label">Uscite</div>
-              <div class="finance-value">€{{ finanze.uscite.toLocaleString() }}</div>
-              <div class="finance-trend">{{ finanze.trendUscite }}%</div>
-            </div>
-
-            <div class="finance-item saldo">
-              <div class="finance-label">Saldo Netto</div>
-              <div class="finance-value primary">€{{ finanze.saldo.toLocaleString() }}</div>
-            </div>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="finance-details">
-            <div class="detail-row">
-              <span>Nuovi pacchetti</span>
-              <strong>{{ finanze.nuoviPacchetti }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Rinnovi</span>
-              <strong>{{ finanze.rinnovi }}</strong>
-            </div>
-            <div class="detail-row">
-              <span>Compensi pagati</span>
-              <strong>€{{ finanze.compensiPagati.toLocaleString() }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <!-- Attività Oggi -->
-        <div class="widget-card">
-          <div class="widget-header">
-            <h3>Attività di Oggi</h3>
           </div>
 
           <div class="activity-list">
@@ -238,13 +268,9 @@
     </div>
 
     <div v-else class="pacchetti-content">
-      <!-- Grafico Ciambella -->
-      <div class="chart-container">
-        <Doughnut :data="chartData" :options="chartOptions" />
-        <div class="chart-center-text">
-          <div class="chart-total">{{ ripartizionePacchetti.totaleAttivi }}</div>
-          <div class="chart-label">Totale</div>
-        </div>
+      <!-- Grafico Barre -->
+      <div class="chart-container-bar" :style="{ height: Math.max(160, ripartizionePacchetti.tipologie.length * 52 + 20) + 'px' }">
+        <Bar :data="chartData" :options="chartOptions" />
       </div>
 
       <!-- Lista Tipologie -->
@@ -300,15 +326,18 @@ import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { dashboardAPI } from '@/services/api';
-import { Doughnut } from 'vue-chartjs'; // ← AGGIUNGI
+import { Bar } from 'vue-chartjs';
 import {
   Chart as ChartJS,
-  ArcElement,
+  Title,
   Tooltip,
   Legend,
+  BarElement,
+  CategoryScale,
+  LinearScale
 } from 'chart.js';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -334,6 +363,7 @@ const chartData = computed(() => ({
   labels: ripartizionePacchetti.value.tipologie.map((t) => t.nome),
   datasets: [
     {
+      label: 'Numero Pacchetti',
       data: ripartizionePacchetti.value.tipologie.map((t) => t.count),
       backgroundColor: [
         'rgba(94, 114, 228, 0.8)',   // Blu
@@ -343,7 +373,7 @@ const chartData = computed(() => ({
         'rgba(17, 205, 239, 0.8)',   // Ciano
         'rgba(245, 54, 92, 0.8)',    // Rosso
       ],
-      borderWidth: 0,
+      borderRadius: 6,
     },
   ],
 }));
@@ -351,56 +381,62 @@ const chartData = computed(() => ({
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
+  indexAxis: 'y', // Grafico a barre orizzontali
   plugins: {
     legend: {
-      display: false, // Usiamo lista custom
+      display: false,
     },
     tooltip: {
       callbacks: {
         label: (context) => {
           const tipo = ripartizionePacchetti.value.tipologie[context.dataIndex];
-          return `${tipo.nome}: ${tipo.count} (${tipo.percentuale}%)`;
+          return `${tipo.count} pacchetti (${tipo.percentuale}%)`;
         },
       },
     },
   },
+  scales: {
+    x: { beginAtZero: true, grid: { display: false } },
+    y: { grid: { display: false } }
+  }
 };
 
 // Azioni Prioritarie
-const azioniPrioritarie = ref([
-  {
-    label: 'Pacchetti da Rinnovare',
-    desc: 'Studenti con meno del 20% ore rimanenti',
-    count: 0,
-    badgeClass: 'warning',
-    priority: 'high',
-    link: '/students',
-  },
-  {
-    label: 'Pagamenti Pendenti',
-    desc: 'Pacchetti con saldo non completato',
-    count: 0,
-    badgeClass: 'danger',
-    priority: 'high',
-    link: '/students',
-  },
-  {
-    label: 'Studenti in Debito Ore',
-    desc: 'Ore negative da regolarizzare',
-    count: 0,
-    badgeClass: 'danger',
-    priority: 'critical',
-    link: '/students',
-  },
-  {
-    label: 'Ore Extra da Gestire',
-    desc: 'Pacchetti con sforamento ore',
-    count: 0,
-    badgeClass: 'info',
-    priority: 'medium',
-    link: '/packages',
-  },
-]);
+const actionsData = ref({
+  pacchettiInScadenzaList: [],
+  pacchettiScadutiList: [],
+  pagamentiPendentiList: []
+});
+
+const showAll = ref({
+  inScadenza: false,
+  scaduti: false,
+  pagamenti: false
+});
+
+const visibleList = (list, type) => {
+  if (!list) return [];
+  return showAll.value[type] ? list.slice(0, 10) : list.slice(0, 3);
+};
+
+const toggleShowAll = (type) => {
+  showAll.value[type] = !showAll.value[type];
+};
+
+const goToStudents = (type) => {
+  let query = {};
+  if (type === 'scaduti') query.stato = 'scaduto';
+  else if (type === 'pagamenti') query.pagamentoSospeso = 'true';
+  else if (type === 'inScadenza') query.stato = 'in_scadenza';
+  router.push({ path: '/students', query });
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleDateString('it-IT');
+};
+
+const periodoAttivita = ref('ieri');
 
 // Finanze
 const finanze = ref({
@@ -451,23 +487,23 @@ const fetchDashboardData = async () => {
   error.value = null;
 
   try {
-    console.log('📡 Chiamata API con periodo:', tutorPeriodo.value); // DEBUG
-    const response = await dashboardAPI.getStats(tutorPeriodo.value, finanzePeriodo.value);
+    console.log('📡 Chiamata API con periodo tutor:', tutorPeriodo.value, 'periodo attivita:', periodoAttivita.value); // DEBUG
+    const response = await dashboardAPI.getStats(tutorPeriodo.value, 'mese_corrente', periodoAttivita.value);
     const data = response.data;
 
     // Popola stats
     stats.value = data.stats;
 
     // Popola azioni prioritarie con dati reali
-    azioniPrioritarie.value[0].count = data.azioniPrioritarie.pacchettiDaRinnovare;
-    azioniPrioritarie.value[1].count = data.azioniPrioritarie.pagamentiPendenti;
-    azioniPrioritarie.value[2].count = data.azioniPrioritarie.studentiDebitoOre;
-    azioniPrioritarie.value[3].count = data.azioniPrioritarie.oreExtraDaGestire;
+    actionsData.value.pacchettiInScadenzaList = data.azioniPrioritarie?.pacchettiInScadenzaList || [];
+    actionsData.value.pacchettiScadutiList = data.azioniPrioritarie?.pacchettiScadutiList || [];
+    actionsData.value.pagamentiPendentiList = data.azioniPrioritarie?.pagamentiPendentiList || [];
 
     // Popola finanze
     finanze.value = data.finanze;
 
     // Popola attività
+    console.log('📊 Attività ricevuta dal backend:', data.attivita, '| periodo:', periodoAttivita.value);
     attivita.value = data.attivita;
     performanceTutor.value = data.performanceTutor || [];
     // Popola ripartizione pacchetti
@@ -504,9 +540,8 @@ const handlePeriodoChange = async () => {
   console.log('🔄 Cambio periodo tutor:', tutorPeriodo.value); // DEBUG
   await fetchDashboardData();
 };
-// Handler cambio periodo finanze
-const handleFinanzeChange = async () => {
-  console.log('💰 Cambio periodo finanze:', finanzePeriodo.value);
+const handleAttivitaChange = async () => {
+  console.log('🔄 Cambio periodo attivita:', periodoAttivita.value); // DEBUG
   await fetchDashboardData();
 };
 
@@ -1063,6 +1098,13 @@ h1 {
   justify-content: center;
 }
 
+.chart-container-bar {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+}
+
 .chart-center-text {
   position: absolute;
   top: 50%;
@@ -1193,6 +1235,68 @@ h1 {
 .btn-link:hover {
   background: #f8f9fa;
   border-color: #5e72e4;
+}
+
+/* Nuove classi Action Cards */
+.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.expand-icon {
+  margin-left: auto;
+  font-size: 14px;
+  color: #8392ab;
+}
+
+.action-list {
+  margin-top: 16px;
+  border-top: 1px solid #f0f2f5;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-list-item {
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.action-list-item:hover {
+  background: #e9ecef;
+}
+
+.item-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #344767;
+}
+
+.item-details {
+  font-size: 12px;
+  color: #8392ab;
+  margin-top: 2px;
+}
+
+.btn-visualizza-tutti {
+  margin-top: 8px;
+  background: none;
+  border: none;
+  color: #5e72e4;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.btn-visualizza-tutti:hover {
+  background: rgba(94, 114, 228, 0.1);
 }
 
 </style>

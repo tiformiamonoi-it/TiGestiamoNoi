@@ -52,6 +52,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
+import { useToast } from "vue-toastification";
 import { closuresAPI } from '@/services/api';
 
 // State
@@ -60,6 +61,7 @@ const loading = ref(true);
 const saving = ref(false);
 const newDate = ref('');
 const newDescription = ref('');
+const toast = useToast();
 
 // Computed
 const todayDate = computed(() => {
@@ -118,7 +120,7 @@ async function addClosure() {
     await loadClosures();
   } catch (err) {
     console.error('Errore aggiunta chiusura:', err);
-    alert(err.response?.data?.error || 'Errore durante l\'aggiunta');
+    toast.error(err.response?.data?.error || 'Errore durante l\'aggiunta');
   } finally {
     saving.value = false;
   }
@@ -132,7 +134,7 @@ async function deleteClosure(id) {
     await loadClosures();
   } catch (err) {
     console.error('Errore rimozione chiusura:', err);
-    alert('Errore durante la rimozione');
+    toast.error('Errore durante la rimozione');
   }
 }
 

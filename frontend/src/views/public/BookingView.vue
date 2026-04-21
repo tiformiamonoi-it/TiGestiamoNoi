@@ -235,8 +235,8 @@
       </div>
     </div>
 
-    <!-- Navigation Buttons -->
-    <div class="navigation" v-if="!submitted">
+    <!-- Navigation Buttons - Nascondi se siamo in modalità modifica (usiamo i tasti interni al pannello) -->
+    <div class="navigation" v-if="!submitted && !(currentStep === 2 && isDuplicate && !isLateTodayMode)">
       <button v-if="currentStep > 1" class="btn-secondary" @click="prevStep">
         ← Indietro
       </button>
@@ -277,6 +277,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { bookingAPI } from '@/services/api';
 
 // State
@@ -290,6 +291,7 @@ const existingBooking = ref(null);
 const checkingDuplicate = ref(false);
 const verifyingStudent = ref(false);
 const verifyError = ref('');
+const toast = useToast();
 
 // Prenotazioni esistenti dell'utente
 const userBookings = ref([]);
@@ -603,13 +605,13 @@ async function saveBookingChanges() {
     
     // Mostra messaggio di successo
     const wasCancelled = editableSubjects.value.length === 0;
-    alert(wasCancelled ? '✅ Prenotazione annullata!' : '✅ Modifiche salvate!');
+    toast.success(wasCancelled ? 'Prenotazione annullata!' : 'Modifiche salvate!');
     
     // Reset completo e torna allo step 1
     resetForm();
   } catch (error) {
     console.error('Errore salvataggio:', error);
-    alert(error.response?.data?.error || 'Errore durante il salvataggio');
+    toast.error(error.response?.data?.error || 'Errore durante il salvataggio');
   } finally {
     savingChanges.value = false;
   }
@@ -635,7 +637,7 @@ function prevStep() {
 
 async function submitCommunication() {
   if (!form.value.notes) {
-    alert('Inserisci una comunicazione');
+    toast.warning('Inserisci una comunicazione');
     return;
   }
   
@@ -648,11 +650,11 @@ async function submitCommunication() {
       requestedDate: form.value.requestedDate.toISOString(),
       notes: form.value.notes
     });
-    alert('✅ Comunicazione inviata con successo!');
+    toast.success('Comunicazione inviata con successo!');
     resetForm();
   } catch (error) {
     console.error('Errore invio comunicazione:', error);
-    alert('Errore durante l\'invio. Riprova.');
+    toast.error('Errore durante l\'invio. Riprova.');
   } finally {
     submitting.value = false;
   }
@@ -672,7 +674,7 @@ async function submitBooking() {
     submitted.value = true;
   } catch (error) {
     console.error('Errore invio prenotazione:', error);
-    alert('Errore durante l\'invio. Riprova.');
+    toast.error('Errore durante l\'invio. Riprova.');
   } finally {
     submitting.value = false;
   }

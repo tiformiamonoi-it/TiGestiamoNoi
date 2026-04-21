@@ -75,6 +75,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue';
+import { useToast } from "vue-toastification";
 import { configAPI } from '@/services/api';
 
 const materie = ref([]);
@@ -84,6 +85,7 @@ const editingMateria = ref(null);
 const formMateria = ref('');
 const saving = ref(false);
 const inputRef = ref(null);
+const toast = useToast();
 
 async function loadMaterie() {
   loading.value = true;
@@ -144,7 +146,7 @@ async function saveMateria() {
     loadMaterie();
   } catch (error) {
     console.error('Errore salvataggio materia:', error);
-    alert('❌ Errore durante il salvataggio');
+    toast.error('Errore durante il salvataggio');
   } finally {
     saving.value = false;
   }
@@ -160,7 +162,7 @@ async function deleteMateria(materia) {
     loadMaterie();
   } catch (error) {
     console.error('Errore eliminazione materia:', error);
-    alert('❌ Errore durante l\'eliminazione');
+    toast.error('Errore durante l\'eliminazione');
   }
 }
 

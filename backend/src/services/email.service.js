@@ -81,7 +81,7 @@ async function sendBookingNotification(booking) {
                 <strong>📚 Materie:</strong>
               </td>
               <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0;">
-                ${subjects.join(', ')}
+                ${(subjects || []).map(s => typeof s === 'string' ? s : s.name).join(', ')}
               </td>
             </tr>
             ${notes ? `

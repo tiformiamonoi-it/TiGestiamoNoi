@@ -36,7 +36,6 @@ api.interceptors.response.use(
     // Per 403, distingui tra errori di autorizzazione business (hanno error message) 
     // e token scaduto/non valido (non hanno messaggio specifico)
     if (error.response?.status === 401) {
-      // 401 = sempre logout
       if (window.location.pathname !== '/login') {
         console.warn('🔐 Sessione scaduta - logout automatico');
         localStorage.removeItem('auth_token');
@@ -44,25 +43,8 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     } else if (error.response?.status === 403) {
-      // 403 potrebbe essere:
-      // - Token scaduto (TokenExpiredError) -> logout
-      // - Errore di autorizzazione business logic -> propaga l'errore
       const errorMessage = error.response?.data?.error;
-
-      // Se c'è un messaggio di errore specifico dal backend, è un errore di business logic
-      // Non fare logout, lascia che il frontend gestisca l'errore
-      if (errorMessage && typeof errorMessage === 'string') {
-        console.warn('⛔ Errore autorizzazione:', errorMessage);
-        // Non fare logout, propaga l'errore normalmente
-      } else {
-        // Nessun messaggio specifico = probabilmente token scaduto
-        if (window.location.pathname !== '/login') {
-          console.warn('🔐 Token non valido - logout automatico');
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('user');
-          window.location.href = '/login';
-        }
-      }
+      console.warn('⛔ Accesso negato:', errorMessage || 'Permessi insufficienti');
     }
     return Promise.reject(error);
   }
@@ -113,6 +95,9 @@ export const studentsAPI = {
 
   // Annual Payments
   getAnnualPayments: (year) => api.get('/students/annual-payments', { params: { year } }),
+
+  // Prenotazioni
+  getBookings: (id) => api.get(`/students/${id}/bookings`),
 };
 
 // ============================================
@@ -174,8 +159,13 @@ export const configAPI = {
 // ============================================
 
 export const dashboardAPI = {
-  getStats: (periodoTutor = 'settimana', periodoFinanze = 'mese_corrente') => {
-    const url = `/dashboard/stats?periodoTutor=${periodoTutor}&periodoFinanze=${periodoFinanze}`;
+  getStats: (periodoTutor = 'settimana', periodoFinanze = 'mese_corrente', periodoAttivita = 'ieri') => {
+    const params = new URLSearchParams({
+      periodoTutor,
+      periodoFinanze,
+      periodoAttivita,
+    });
+    const url = `/dashboard/stats?${params.toString()}`;
     console.log('🌐 API getStats - URL completa:', url);
     return api.get(url);
   },
@@ -247,8 +237,32 @@ export const timeslotsAPI = {
 // ========================================
 
 export const tutorsAPI = {
-  // Lista tutor attivi
+  // Lista tutor
   getAll: (params) => api.get('/tutors', { params }),
+  
+  // Dettaglio tutor
+  getById: (id) => api.get(`/tutors/${id}`),
+  
+  // Crea tutor
+  create: (data) => api.post('/tutors', data),
+  
+  // Aggiorna tutor
+  update: (id, data) => api.put(`/tutors/${id}`, data),
+  
+  // Elimina tutor
+  delete: (id) => api.delete(`/tutors/${id}`),
+  
+  // Pagamenti
+  pay: (data) => api.post('/tutors/pay', data),
+  updatePayment: (id, data) => api.put(`/tutors/payments/${id}`, data),
+  deletePayment: (id) => api.delete(`/tutors/payments/${id}`),
+  
+  // Utils
+  checkDuplicate: (firstName, lastName) => api.get('/tutors/check-duplicate', { params: { firstName, lastName } }),
+  getStats: () => api.get('/tutors/stats'),
+  getDetailedStats: (id) => api.get(`/tutors/${id}/detailed-stats`),
+  getMonthlyPerformance: (id) => api.get(`/tutors/${id}/monthly-performance`),
+  updateCompensoMensile: (id, data) => api.put(`/tutors/${id}/compenso-mensile`, data),
 };
 
 // ========================================
@@ -332,7 +346,7 @@ export const availabilityAPI = {
   getMatching: (date) => api.get(`/availability/matching/${date}`),
 
   // Admin: assegna prenotazione a tutor/slot
-  assign: (bookingId, tutorId, slot) => api.post('/availability/assign', { bookingId, tutorId, slot }),
+  assign: (subjectId, tutorId, slot) => api.post('/availability/assign', { subjectId, tutorId, slot }),
 };
 
 // ==========================================

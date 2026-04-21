@@ -35,7 +35,7 @@
       <option value="">Tutti gli stati</option>
       <option value="attivo">Attivo</option>
       <option value="sospeso">Sospeso</option>
-      <option value="ore_negative">Ore Negative</option>
+
       <option value="in_scadenza">In Scadenza</option>
       <option value="scaduto">Scaduto</option>
       <option value="inattivo">Inattivo</option>
@@ -52,14 +52,7 @@
     </select>
 
     <div class="filter-checkboxes">
-      <label class="checkbox-label">
-        <input
-          type="checkbox"
-          :checked="filters.oreNegative"
-          @change="updateFilter('oreNegative', $event.target.checked)"
-        />
-        <span>Ore Negative</span>
-      </label>
+
 
       <label class="checkbox-label">
         <input
@@ -99,7 +92,6 @@ const hasActiveFilters = computed(() => {
     props.filters.scuola ||
     props.filters.stato ||
     props.filters.pacchetto ||
-    props.filters.oreNegative ||
     props.filters.pagamentoSospeso
   );
 });

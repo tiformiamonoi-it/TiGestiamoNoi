@@ -92,7 +92,7 @@
                   <div v-if="getAssignedBadges(tutor.id, slot.id).length > 0" class="mini-badges">
                     <div 
                       v-for="badge in getAssignedBadges(tutor.id, slot.id)" 
-                      :key="`${badge.bookingId}-${badge.subject}`"
+                      :key="badge.subjectId"
                       class="mini-badge"
                       draggable="true"
                       @dragstart="handleDragStart($event, badge)"
@@ -156,7 +156,7 @@
           <div class="badges-list">
             <div
               v-for="badge in sortedUnassignedBadges"
-              :key="`${badge.bookingId}-${badge.subject}`"
+              :key="badge.subjectId"
               class="badge unassigned"
               draggable="true"
               @dragstart="handleDragStart($event, badge)"
@@ -171,7 +171,7 @@
         <div class="badges-section assigned-section" v-if="assignedBadges.length > 0">
           <h3>✅ Già assegnati</h3>
           <div class="assigned-list">
-            <div v-for="badge in assignedBadges" :key="`assigned-${badge.bookingId}-${badge.subject}`" class="assigned-item">
+            <div v-for="badge in assignedBadges" :key="`assigned-${badge.subjectId}`" class="assigned-item">
               <span>{{ badge.studentName }} {{ badge.studentSurname }} - {{ badge.subject }}</span>
               <span class="assigned-to">→ {{ getTutorName(badge.assignedTutorId) }} ({{ badge.assignedSlot }})</span>
             </div>
@@ -184,6 +184,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { useToast } from "vue-toastification";
 import { availabilityAPI, closuresAPI } from '@/services/api';
 
 // State
@@ -196,6 +197,7 @@ const slots = ref([]);
 const sortBy = ref('student'); // 'student' o 'subject'
 const filterSubject = ref(''); // Filtro materia specifica
 const closures = ref([]); // Lista date chiusure
+const toast = useToast();
 
 // Computed
 const isToday = computed(() => currentDate.value === formatDateKey(new Date()));
@@ -360,12 +362,10 @@ async function handleDrop(event, tutorId, slotId) {
   if (!draggedBadge) return;
   
   try {
-    await availabilityAPI.assign(draggedBadge.bookingId, tutorId, slotId);
+    await availabilityAPI.assign(draggedBadge.subjectId, tutorId, slotId);
     
     // Aggiorna stato locale
-    const badge = badges.value.find(b => 
-      b.bookingId === draggedBadge.bookingId && b.subject === draggedBadge.subject
-    );
+    const badge = badges.value.find(b => b.subjectId === draggedBadge.subjectId);
     if (badge) {
       badge.assignedTutorId = tutorId;
       badge.assignedSlot = slotId;
@@ -373,7 +373,7 @@ async function handleDrop(event, tutorId, slotId) {
     }
   } catch (err) {
     console.error('Errore assegnazione:', err);
-    alert('Errore durante l\'assegnazione');
+    toast.error('Errore durante l\'assegnazione');
   }
   
   draggedBadge = null;
@@ -381,12 +381,10 @@ async function handleDrop(event, tutorId, slotId) {
 
 async function removeAssignment(badge) {
   try {
-    await availabilityAPI.assign(badge.bookingId, null, null);
+    await availabilityAPI.assign(badge.subjectId, null, null);
     
     // Aggiorna stato locale
-    const b = badges.value.find(x => 
-      x.bookingId === badge.bookingId && x.subject === badge.subject
-    );
+    const b = badges.value.find(x => x.subjectId === badge.subjectId);
     if (b) {
       b.assignedTutorId = null;
       b.assignedSlot = null;
@@ -394,7 +392,7 @@ async function removeAssignment(badge) {
     }
   } catch (err) {
     console.error('Errore rimozione:', err);
-    alert('Errore durante la rimozione');
+    toast.error('Errore durante la rimozione');
   }
 }
 

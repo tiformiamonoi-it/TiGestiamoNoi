@@ -91,6 +91,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { configAPI } from '@/services/api';
 
 const tariffe = ref({
@@ -102,6 +103,7 @@ const tariffe = ref({
 const originalTariffe = ref({ singola: 5, gruppo: 8, maxi: 8.5 });
 const saving = ref(false);
 const savedAt = ref(null);
+const toast = useToast();
 
 // Calcolo automatico mezza lezione
 const mezzaSingola = computed(() => tariffe.value.singola / 2);
@@ -146,10 +148,10 @@ async function salvaTariffe() {
     
     originalTariffe.value = { ...tariffe.value };
     savedAt.value = new Date();
-    alert('✅ Tariffe salvate con successo!');
+    toast.success('Tariffe salvate con successo!');
   } catch (error) {
     console.error('Errore salvataggio tariffe:', error);
-    alert('❌ Errore durante il salvataggio');
+    toast.error('Errore durante il salvataggio');
   } finally {
     saving.value = false;
   }

@@ -275,6 +275,8 @@
 // Vue 3 Composition API
 import { ref, computed, onMounted } from 'vue';
 import { calendarAPI, timeslotsAPI, tutorsAPI, lessonsAPI, closuresAPI } from '@/services/api';
+import { useToast } from "vue-toastification";
+import Swal from 'sweetalert2';
 import CreateLessonModal from '@/components/calendar/CreateLessonModal.vue';
 import ManageSlotModal from '@/components/calendar/ManageSlotModal.vue';
 import AddQuickLessonModal from '@/components/calendar/AddQuickLessonModal.vue'; // ✅ NUOVO
@@ -286,6 +288,7 @@ import AddQuickLessonModal from '@/components/calendar/AddQuickLessonModal.vue';
 
 const loading = ref(false);
 const giorni = ref([]);
+const toast = useToast();
 const expandedDays = ref(new Set());
 const allExpanded = ref(false);
 
@@ -412,8 +415,6 @@ const loadTimeSlots = async () => {
       isStandard: STANDARD_SLOTS.includes(slot.oraInizio),
     }));
     
-    console.log('🕒 TimeSlots caricati:', timeSlots.value);
-    console.log('🎯 Slot standard:', STANDARD_SLOTS);
     
   } catch (error) {
     console.error('Errore caricamento slot orari:', error);
@@ -427,9 +428,8 @@ const loadTimeSlots = async () => {
 
 const loadTutors = async () => {
   try {
-    const response = await tutorsAPI.getAll();
+    const response = await tutorsAPI.getAll({ stato: 'attivo' });
     tutors.value = response.data.data || [];
-    console.log('✅ Tutor caricati:', tutors.value.length);
   } catch (error) {
     console.error('Errore caricamento tutor:', error);
     tutors.value = [];
@@ -452,7 +452,7 @@ const loadGiorni = async () => {
     giorni.value = response.data.giorni || [];
   } catch (error) {
     console.error('Errore caricamento giorni:', error);
-    alert('Errore durante il caricamento del calendario');
+    toast.error('Errore durante il caricamento del calendario');
   } finally {
     loading.value = false;
   }
@@ -540,13 +540,10 @@ const getMargineClass = (margine) => {
 // ========================================
 
 const getActiveSlotsForDay = (giorno) => {
-  console.log('🔍 getActiveSlotsForDay chiamata per:', giorno.data);
-  console.log('📋 Lezioni nel giorno:', giorno.lezioni);
   
   // 1. Se non ci sono lezioni, mostra solo gli slot standard
   if (!giorno.lezioni || giorno.lezioni.length === 0) {
     const standardSlots = timeSlots.value.filter(slot => STANDARD_SLOTS.includes(slot.start));
-    console.log('✅ Nessuna lezione → Slot standard:', standardSlots);
     return standardSlots;
   }
 
@@ -556,7 +553,6 @@ const getActiveSlotsForDay = (giorno) => {
   giorno.lezioni.forEach(lezione => {
     if (lezione.timeSlot?.oraInizio) {
       usedSlotIds.add(lezione.timeSlot.oraInizio);
-      console.log('🕒 Slot usato:', lezione.timeSlot.oraInizio);
     }
   });
   
@@ -565,13 +561,10 @@ const getActiveSlotsForDay = (giorno) => {
     const isStandard = STANDARD_SLOTS.includes(slot.start);
     const hasLesson = usedSlotIds.has(slot.start);
     
-    if (isStandard) console.log(`✅ Slot ${slot.start} è STANDARD → mostra`);
-    if (hasLesson) console.log(`📌 Slot ${slot.start} ha lezioni → mostra`);
     
     return isStandard || hasLesson;
   });
   
-  console.log('🎯 Slot finali da mostrare:', result);
   return result;
 };
 
@@ -630,7 +623,7 @@ const isHalfLessonSlot = (giorno, tutorId, slotStart) => {
 const openManageSlotModal = (date, tutorId, slotStart, slotEnd) => {
   // ✅ Blocca se è una chiusura
   if (isClosureDate(date)) {
-    alert('❌ Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
+    toast.warning('Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
     return;
   }
   
@@ -672,7 +665,7 @@ const handleSlotSaved = () => {
 const openAddTutorModal = (date) => {
   // ✅ Blocca se è una chiusura
   if (isClosureDate(date)) {
-    alert('❌ Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
+    toast.warning('Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
     return;
   }
   
@@ -691,7 +684,7 @@ const openCreateModal = (date = null) => {
   
   // ✅ Blocca se è una chiusura
   if (isClosureDate(targetDate)) {
-    alert('❌ Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
+    toast.warning('Non è possibile aggiungere lezioni in questa data: è una giornata di chiusura.');
     return;
   }
   
@@ -711,21 +704,27 @@ const handleLessonSaved = () => {
 /**
  * Conferma eliminazione tutte le lezioni del tutor
  */
-const confirmDeleteTutorRow = (date, tutorId, tutorFirstName, tutorLastName) => {
+const confirmDeleteTutorRow = async (date, tutorId, tutorFirstName, tutorLastName) => {
   const tutorName = `${tutorFirstName} ${tutorLastName}`;
   const formattedDate = formatDate(date);
   
-  const confirmed = confirm(
-    `⚠️ ATTENZIONE!\n\n` +
-    `Stai per eliminare TUTTE le lezioni di ${tutorName} del ${formattedDate}.\n\n` +
-    `Questa azione:\n` +
-    `• Eliminerà tutte le lezioni del tutor in questa giornata\n` +
-    `• Ripristinerà le ore nei pacchetti degli studenti\n` +
-    `• NON può essere annullata\n\n` +
-    `Sei sicuro di voler continuare?`
-  );
+  const result = await Swal.fire({
+    title: '⚠️ ATTENZIONE!',
+    html: `Stai per eliminare TUTTE le lezioni di <b>${tutorName}</b> del <b>${formattedDate}</b>.<br><br>
+    Questa azione:<br>
+    • Eliminerà tutte le lezioni del tutor in questa giornata<br>
+    • Ripristinerà le ore nei pacchetti degli studenti<br>
+    • NON può essere annullata<br><br>
+    <b>Sei sicuro di voler continuare?</b>`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, elimina tutto',
+    cancelButtonText: 'Annulla'
+  });
   
-  if (confirmed) {
+  if (result.isConfirmed) {
     deleteTutorLessons(date, tutorId, tutorName);
   }
 };
@@ -739,22 +738,14 @@ const deleteTutorLessons = async (date, tutorId, tutorName) => {
     
     const response = await lessonsAPI.deleteBulkByTutorDate(tutorId, date);
     
-    alert(
-      `✅ Successo!\n\n` +
-      `${response.data.deletedCount} lezioni di ${tutorName} eliminate.\n` +
-      `Le ore sono state ripristinate nei pacchetti degli studenti.`
-    );
+    toast.success(`${response.data.deletedCount} lezioni di ${tutorName} eliminate correttamente.`);
     
     // Ricarica calendario
     await loadGiorni();
     
   } catch (error) {
     console.error('Errore eliminazione lezioni tutor:', error);
-    alert(
-      `❌ Errore!\n\n` +
-      `Non è stato possibile eliminare le lezioni.\n` +
-      `Dettaglio: ${error.response?.data?.error || error.message}`
-    );
+    toast.error(`Errore durante l'eliminazione: ${error.response?.data?.error || error.message}`);
   } finally {
     loading.value = false;
   }

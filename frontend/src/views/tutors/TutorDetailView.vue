@@ -534,6 +534,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useToast } from "vue-toastification";
+import Swal from 'sweetalert2';
 import { useTutorStore } from '@/stores/tutor';
 import TutorRating from '@/components/tutors/TutorRating.vue';
 import TutorPaymentHistory from '@/components/tutors/TutorPaymentHistory.vue';
@@ -550,6 +552,7 @@ import api from '@/services/api';
 const route = useRoute();
 const router = useRouter();
 const tutorStore = useTutorStore();
+const toast = useToast();
 
 const tutorId = route.params.id;
 const tutor = ref(null);
@@ -692,9 +695,9 @@ async function handlePaymentConfirm(payload) {
     );
     showPaymentModal.value = false;
     await fetchTutor(); // Refresh data
-    alert('Pagamento registrato con successo!');
+    toast.success('Pagamento registrato con successo!');
   } catch (e) {
-    alert('Errore durante il pagamento: ' + e.message);
+    toast.error('Errore durante il pagamento: ' + e.message);
   }
 }
 
@@ -720,7 +723,7 @@ async function handleSubjectsSave(subjects) {
     // Ricarica dati
     await fetchTutor();
   } catch (e) {
-    alert('Errore salvataggio materie');
+    toast.error('Errore salvataggio materie');
   }
 }
 
@@ -734,7 +737,7 @@ async function handleEditSave(updatedTutor) {
     showEditModal.value = false;
     await fetchTutor();
   } catch (e) {
-    alert('Errore salvataggio dati');
+    toast.error('Errore salvataggio dati');
   }
 }
 
@@ -916,7 +919,7 @@ function handleHistoryPay(item) {
 
 function handleHistoryDetails(item) {
   // Placeholder for details
-  alert(`Dettagli per ${new Date(item.mese).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}: \nImporto: ${item.importo}€\n(Dettaglio ore in arrivo)`);
+  toast.info(`Dettagli per ${new Date(item.mese).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}: \nImporto: ${item.importo}€\n(Dettaglio ore in arrivo)`);
 }
 
 function handleHistoryEdit(item) {
@@ -925,24 +928,44 @@ function handleHistoryEdit(item) {
 }
 
 async function handleHistoryReset(item) {
-  if (!confirm('Sei sicuro di voler resettare questo pagamento? Verrà eliminato dalla contabilità.')) return;
+  const result = await Swal.fire({
+    title: 'Attenzione',
+    text: 'Sei sicuro di voler resettare questo pagamento? Verrà eliminato dalla contabilità.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, resetta',
+    cancelButtonText: 'Annulla'
+  });
+  if (!result.isConfirmed) return;
   
   try {
     await tutorStore.deletePayment(item.id);
     await fetchTutor();
   } catch (e) {
-    alert('Errore eliminazione pagamento: ' + e.message);
+    toast.error('Errore eliminazione pagamento: ' + e.message);
   }
 }
 
 async function handleDeletePayment(payment) {
-  if (!confirm(`Sei sicuro di voler eliminare il pagamento di ${payment.importo}€ del ${new Date(payment.dataPagamento).toLocaleDateString()}?`)) return;
+  const result = await Swal.fire({
+    title: 'Elimina Pagamento',
+    text: `Sei sicuro di voler eliminare il pagamento di ${payment.importo}€ del ${new Date(payment.dataPagamento).toLocaleDateString()}?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, elimina',
+    cancelButtonText: 'Annulla'
+  });
+  if (!result.isConfirmed) return;
 
   try {
     await tutorStore.deletePayment(payment.id);
     await fetchTutor();
   } catch (e) {
-    alert('Errore eliminazione pagamento: ' + e.message);
+    toast.error('Errore eliminazione pagamento: ' + e.message);
   }
 }
 
@@ -962,7 +985,7 @@ async function saveModifyAmount() {
     const { mese, nuovoImporto, note } = modifyAmountData.value;
     
     if (!nuovoImporto || nuovoImporto < 0) {
-      alert('Inserisci un importo valido');
+      toast.warning('Inserisci un importo valido');
       return;
     }
     
@@ -974,14 +997,14 @@ async function saveModifyAmount() {
     
     showModifyAmountModal.value = false;
     await fetchTutor();
-    alert('✅ Importo compenso aggiornato con successo!');
+    toast.success('Importo compenso aggiornato con successo!');
   } catch (e) {
-    alert('Errore: ' + (e.response?.data?.error || e.message));
+    toast.error('Errore: ' + (e.response?.data?.error || e.message));
   }
 }
 
 function handleHistoryExport(item) {
-  alert('Funzionalità Export in arrivo... Porterà alla pagina dedicata agli export.');
+  toast.info('Funzionalità Export in arrivo... Porterà alla pagina dedicata agli export.');
 }
 
 async function handleEditPaymentSave(updatedPayment) {
@@ -1007,40 +1030,59 @@ async function handleEditPaymentSave(updatedPayment) {
     showEditPaymentModal.value = false;
     await fetchTutor();
   } catch (e) {
-    alert('Errore salvataggio pagamento: ' + e.message);
+    toast.error('Errore salvataggio pagamento: ' + e.message);
   }
 }
 
-// Toggle Active/Inactive
 async function toggleActive() {
   showMenu.value = false;
   const newState = !tutor.value.active;
   const action = newState ? 'attivare' : 'disattivare';
   
-  if (!confirm(`Sei sicuro di voler ${action} ${tutor.value.firstName} ${tutor.value.lastName}?`)) return;
+  const result = await Swal.fire({
+    title: 'Conferma Azione',
+    text: `Sei sicuro di voler ${action} ${tutor.value.firstName} ${tutor.value.lastName}?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#4f46e5',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, procedi',
+    cancelButtonText: 'Annulla'
+  });
+  if (!result.isConfirmed) return;
   
   try {
     await tutorStore.updateTutor(tutorId, { active: newState });
     await fetchTutor();
   } catch (e) {
     console.error('Errore toggle stato:', e);
-    alert('❌ Errore: ' + (e.response?.data?.error || e.message));
+    toast.error('Errore: ' + (e.response?.data?.error || e.message));
   }
 }
 
-// Delete Tutor
 async function deleteTutor() {
   showMenu.value = false;
-  if (!confirm(`Sei sicuro di voler eliminare ${tutor.value.firstName} ${tutor.value.lastName}?\n\nQuesta azione è irreversibile.`)) return;
+  
+  const result = await Swal.fire({
+    title: 'Attenzione!',
+    text: `Sei sicuro di voler eliminare ${tutor.value.firstName} ${tutor.value.lastName}?\n\nQuesta azione è irreversibile.`,
+    icon: 'error',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Sì, elimina',
+    cancelButtonText: 'Annulla'
+  });
+  if (!result.isConfirmed) return;
   
   try {
     await api.delete(`/tutors/${tutorId}`);
-    alert('✅ Tutor eliminato con successo!');
+    toast.success('Tutor eliminato con successo!');
     router.push('/tutors');
   } catch (e) {
     console.error('Errore eliminazione:', e);
     const errorMsg = e.response?.data?.error || 'Errore durante l\'eliminazione';
-    alert(`❌ ${errorMsg}`);
+    toast.error(`Errore: ${errorMsg}`);
   }
 }
 </script>

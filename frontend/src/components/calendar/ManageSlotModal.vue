@@ -183,6 +183,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import { lessonsAPI } from '@/services/api';
 import StudentSearchModal from './StudentSearchModal.vue';
 
@@ -233,6 +234,7 @@ const mezzaLezioneGlobale = ref(false); // ✅ NUOVA: checkbox globale per mezza
 const note = ref('');
 
 const showStudentSearch = ref(false);
+const toast = useToast();
 
 // ========================================
 // COMPUTED
@@ -372,7 +374,7 @@ const updateCalculations = () => {
 // Salva lezione
 const saveLesson = async () => {
   if (students.value.length === 0) {
-    alert('Aggiungi almeno uno studente');
+    toast.warning('Aggiungi almeno uno studente');
     return;
   }
 
@@ -402,7 +404,7 @@ const saveLesson = async () => {
     closeModal();
   } catch (error) {
     console.error('Errore salvataggio lezione:', error);
-    alert('Errore durante il salvataggio della lezione');
+    toast.error('Errore durante il salvataggio della lezione');
   } finally {
     saving.value = false;
   }
@@ -419,7 +421,7 @@ const deleteLesson = async () => {
     closeModal();
   } catch (error) {
     console.error('Errore eliminazione lezione:', error);
-    alert('Errore durante l\'eliminazione della lezione');
+    toast.error('Errore durante l\'eliminazione della lezione');
   } finally {
     saving.value = false;
   }

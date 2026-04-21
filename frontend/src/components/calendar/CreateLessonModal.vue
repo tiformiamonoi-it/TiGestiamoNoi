@@ -14,10 +14,11 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">📅 Data</label>
-              <input
+                <input
                 v-model="formData.data"
                 type="date"
                 class="form-input"
+                :max="todayDate"
                 required
               />
             </div>
@@ -167,6 +168,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import SlotCard from './SlotCard.vue';
+import { useToast } from "vue-toastification";
 import { timeslotsAPI, tutorsAPI, lessonsAPI } from '@/services/api';
 
 const props = defineProps({
@@ -194,6 +196,8 @@ const mainSlots = ref([]);
 const extraSlots = ref([]);
 const showExtraSlotSelector = ref(false);
 const saving = ref(false);
+const toast = useToast();
+const todayDate = new Date().toISOString().split('T')[0];
 
 // ========================================
 // COMPUTED
@@ -301,7 +305,7 @@ const availableExtraSlots = computed(() => {
 
 const loadTutors = async () => {
   try {
-    const response = await tutorsAPI.getAll();
+    const response = await tutorsAPI.getAll({ stato: 'attivo' });
     tutors.value = response.data.data || [];
     console.log('✅ Modal - Tutor caricati:', tutors.value.length);
   } catch (error) {
@@ -348,7 +352,7 @@ const handleRemoveExtraStudent = (slotIndex, studentIndex) => {
 
 const handleDuplicate = (slotIndex) => {
   if (slotIndex >= mainSlots.value.length - 1) {
-    alert('Non ci sono slot successivi disponibili');
+    toast.info('Non ci sono slot successivi disponibili');
     return;
   }
   
@@ -359,7 +363,7 @@ const handleDuplicate = (slotIndex) => {
   nextSlot.mezzaLezione = currentSlot.mezzaLezione;
   nextSlot.forzaGruppo = currentSlot.forzaGruppo;
   
-  alert(`✅ Studenti duplicati in ${nextSlot.oraInizio}-${nextSlot.oraFine}`);
+  toast.success(`Studenti duplicati in ${nextSlot.oraInizio}-${nextSlot.oraFine}`);
 };
 
 const addExtraSlot = (slot) => {
@@ -407,7 +411,7 @@ const handleSave = async () => {
       const errorMessages = duplicateErrors.map(e => 
         `• Slot ${e.slot}: ${e.students} già presenti`
       ).join('\n');
-      alert(`⚠️ Studenti duplicati trovati:\n\n${errorMessages}\n\nRimuovi gli studenti duplicati o usa la modifica lezione per aggiungerli.`);
+      toast.error(`Studenti duplicati trovati:\n${errorMessages}. Rimuovi gli studenti duplicati.`);
       saving.value = false;
       return;
     }
@@ -434,12 +438,12 @@ const handleSave = async () => {
       console.log(`✅ Lezione ${results.length}/${allSlots.length} creata per slot ${slot.oraInizio}-${slot.oraFine}`);
     }
     
-    alert(`✅ ${results.length} lezioni create con successo!`);
+    toast.success(`${results.length} lezioni create con successo!`);
     emit('saved');
     handleClose();
   } catch (error) {
     console.error('Errore salvataggio lezioni:', error);
-    alert('❌ Errore durante il salvataggio delle lezioni');
+    toast.error('Errore durante il salvataggio delle lezioni');
   } finally {
     saving.value = false;
   }

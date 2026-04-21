@@ -1,7 +1,7 @@
 // backend/src/controllers/payments.controller.js
 const prisma = require('../config/prisma');
 const { validationResult } = require('express-validator');
-const { updatePackageStates } = require('../utils/packageStates');
+const { updatePackageStates, isPacchettoClosed } = require('../utils/packageStates');
 
 const getPayments = async (req, res, next) => {
   try {
@@ -60,6 +60,17 @@ const createPayment = async (req, res, next) => {
 
     if (!package_) {
       return res.status(404).json({ error: 'Pacchetto non trovato' });
+    }
+
+    // ✅ NUOVO: Validazione pacchetto chiuso e importo residuo
+    if (isPacchettoClosed(package_)) {
+      return res.status(400).json({ error: 'Impossibile aggiungere un pagamento a un pacchetto già chiuso' });
+    }
+
+    if (parseFloat(importo) > parseFloat(package_.importoResiduo)) {
+      return res.status(400).json({ 
+        error: `L'importo supera il residuo da pagare (€${parseFloat(package_.importoResiduo).toFixed(2)})` 
+      });
     }
 
     const [payment, updatedPackage] = await prisma.$transaction(async (tx) => {

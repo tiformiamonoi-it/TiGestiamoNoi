@@ -57,6 +57,7 @@
 
 <script setup>
 import { ref, watch, onMounted, computed } from 'vue';
+import { useToast } from "vue-toastification";
 import { configAPI } from '@/services/api';
 
 const props = defineProps({
@@ -73,6 +74,7 @@ const subjects = ref([]);
 const newSubject = ref('');
 const configMaterie = ref([]);
 const loadingMaterie = ref(false);
+const toast = useToast();
 
 // Load subjects from settings
 async function loadMaterieFromConfig() {
@@ -119,7 +121,7 @@ function addSubject() {
   
   // Check if already exists
   if (subjects.value.some(s => s.name.toLowerCase() === newSubject.value.toLowerCase())) {
-    alert('Materia già presente in lista');
+    toast.warning('Materia già presente in lista');
     return;
   }
 

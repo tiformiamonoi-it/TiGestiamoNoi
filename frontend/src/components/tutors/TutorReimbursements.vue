@@ -221,6 +221,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useToast } from "vue-toastification";
 import api from '@/services/api';
 
 const props = defineProps({
@@ -239,6 +240,7 @@ const showPayModal = ref(false);
 const isEditing = ref(false);
 const selectedItem = ref(null);
 const payLoading = ref(false);
+const toast = useToast();
 
 const form = ref({
   importo: '',
@@ -363,7 +365,7 @@ async function saveReimbursement() {
     await fetchReimbursements();
     emit('refresh');
   } catch (error) {
-    alert('Errore: ' + (error.response?.data?.error || error.message));
+    toast.error('Errore: ' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -381,9 +383,9 @@ async function confirmPay() {
     closePayModal();
     await fetchReimbursements();
     emit('refresh');
-    alert('✅ Pagamento registrato con successo!');
+    toast.success('Pagamento registrato con successo!');
   } catch (error) {
-    alert('Errore: ' + (error.response?.data?.error || error.message));
+    toast.error('Errore: ' + (error.response?.data?.error || error.message));
   } finally {
     payLoading.value = false;
   }
@@ -405,11 +407,11 @@ async function deleteReimbursement(item) {
     await api.delete(`/reimbursements/${item.id}?force=true`);
     await fetchReimbursements();
     emit('refresh');
-    alert(hasPayments 
-      ? '✅ Rimborso e tutti i pagamenti eliminati!' 
-      : '✅ Rimborso eliminato!');
+    toast.success(hasPayments 
+      ? 'Rimborso e tutti i pagamenti eliminati!' 
+      : 'Rimborso eliminato!');
   } catch (error) {
-    alert('Errore: ' + (error.response?.data?.error || error.message));
+    toast.error('Errore: ' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -428,9 +430,9 @@ async function deletePaymentItem(reimbursement, payment) {
     await api.delete(`/reimbursements/${reimbursement.id}/payments/${payment.id}`);
     await fetchReimbursements();
     emit('refresh');
-    alert('✅ Pagamento eliminato e rimborso aggiornato!');
+    toast.success('Pagamento eliminato e rimborso aggiornato!');
   } catch (error) {
-    alert('Errore: ' + (error.response?.data?.error || error.message));
+    toast.error('Errore: ' + (error.response?.data?.error || error.message));
   }
 }
 
